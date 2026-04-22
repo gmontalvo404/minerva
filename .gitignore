@@ -1,0 +1,8 @@
+__pycache__/
+**/__pycache__/
+scripts/
+
+# Keep personal finance data local. The demo dataset is safe to publish.
+/finance/data/*
+!/finance/data/demo/
+!/finance/data/demo/**

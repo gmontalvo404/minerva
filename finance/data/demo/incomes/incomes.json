@@ -1,0 +1,532 @@
+{
+  "months": [
+    {
+      "name": "January",
+      "month_id": "01-january",
+      "income_usd": 491.98,
+      "usd_cop": 4065.22,
+      "income_cop": 2000000,
+      "entries": [
+        {
+          "description": "Main income",
+          "amount_usd": 491.98,
+          "usd_cop": 4065.22,
+          "amount_cop": 2000000,
+          "created_at": "2026-04-15T15:21:01.000Z",
+          "updated_at": "2026-04-15T15:21:01.000Z",
+          "history": [],
+          "received": true
+        }
+      ]
+    },
+    {
+      "name": "February",
+      "month_id": "02-february",
+      "income_usd": 487.99,
+      "usd_cop": 4098.44,
+      "income_cop": 2000000,
+      "entries": [
+        {
+          "description": "Main income",
+          "amount_usd": 487.99,
+          "usd_cop": 4098.41,
+          "amount_cop": 2000000,
+          "created_at": "2026-04-15T15:21:01.000Z",
+          "updated_at": "2026-04-18T21:36:51.637Z",
+          "history": [
+            {
+              "changed_at": "2026-04-18T21:36:51.637Z",
+              "changes": {
+                "received": {
+                  "from": false,
+                  "to": true
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-18T21:36:49.609Z",
+              "changes": {
+                "received": {
+                  "from": true,
+                  "to": false
+                }
+              }
+            }
+          ],
+          "received": true
+        }
+      ]
+    },
+    {
+      "name": "March",
+      "month_id": "03-march",
+      "income_usd": 493.29,
+      "usd_cop": 4054.37,
+      "income_cop": 2000000,
+      "entries": [
+        {
+          "description": "Main income",
+          "amount_usd": 493.29,
+          "usd_cop": 4054.37,
+          "amount_cop": 2000000,
+          "created_at": "2026-04-15T15:21:01.000Z",
+          "updated_at": "2026-04-15T15:21:01.000Z",
+          "history": [],
+          "received": true
+        }
+      ]
+    },
+    {
+      "name": "April",
+      "month_id": "04-april",
+      "income_usd": 512.667,
+      "usd_cop": 4012.35,
+      "income_cop": 2057000,
+      "entries": [
+        {
+          "description": "Main income",
+          "amount_usd": 500,
+          "usd_cop": 4000,
+          "amount_cop": 2000000,
+          "created_at": "2026-04-15T04:18:40.264Z",
+          "updated_at": "2026-04-19T17:24:46.792Z",
+          "history": [
+            {
+              "changed_at": "2026-04-19T17:24:46.792Z",
+              "changes": {
+                "usd_cop": {
+                  "from": 5000,
+                  "to": 4000
+                },
+                "amount_cop": {
+                  "from": 2500000,
+                  "to": 2000000
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-19T17:24:27.687Z",
+              "changes": {
+                "usd_cop": {
+                  "from": 4000,
+                  "to": 5000
+                },
+                "amount_cop": {
+                  "from": 2000000,
+                  "to": 2500000
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-19T17:23:17.213Z",
+              "changes": {
+                "amount_usd": {
+                  "from": 485.4192201740228,
+                  "to": 500
+                },
+                "amount_cop": {
+                  "from": 1941676.88,
+                  "to": 2000000
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-19T17:23:02.355Z",
+              "changes": {
+                "usd_cop": {
+                  "from": 4120.15,
+                  "to": 4000
+                },
+                "amount_cop": {
+                  "from": 2000000,
+                  "to": 1941676.88
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-16T02:51:23.081Z",
+              "changes": {
+                "amount_usd": {
+                  "from": 485.12,
+                  "to": 485.4192201740228
+                },
+                "amount_cop": {
+                  "from": 1998767.168,
+                  "to": 2000000
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-16T02:51:17.337Z",
+              "changes": {
+                "amount_usd": {
+                  "from": 485.4192201740228,
+                  "to": 485.12
+                },
+                "amount_cop": {
+                  "from": 2000000,
+                  "to": 1998767.168
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-16T02:51:12.557Z",
+              "changes": {
+                "amount_usd": {
+                  "from": 485.42,
+                  "to": 485.4192201740228
+                },
+                "amount_cop": {
+                  "from": 2000003.213,
+                  "to": 2000000
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-16T02:47:08.130Z",
+              "changes": {
+                "amount_usd": {
+                  "from": 485.18,
+                  "to": 485.42
+                },
+                "amount_cop": {
+                  "from": 1999014.377,
+                  "to": 2000003.213
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-16T02:47:02.264Z",
+              "changes": {
+                "amount_usd": {
+                  "from": 485.4192201740228,
+                  "to": 485.18
+                },
+                "amount_cop": {
+                  "from": 2000000,
+                  "to": 1999014.377
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-16T02:38:25.602Z",
+              "changes": {
+                "amount_usd": {
+                  "from": 485.419,
+                  "to": 485.4192201740228
+                },
+                "amount_cop": {
+                  "from": 1999999.093,
+                  "to": 2000000
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-16T02:34:13.990Z",
+              "changes": {
+                "amount_usd": {
+                  "from": 12,
+                  "to": 485.419
+                },
+                "amount_cop": {
+                  "from": 49441.8,
+                  "to": 1999999.093
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-16T02:34:10.495Z",
+              "changes": {
+                "amount_usd": {
+                  "from": 1243.23,
+                  "to": 12
+                },
+                "amount_cop": {
+                  "from": 5122294.084,
+                  "to": 49441.8
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-16T02:34:07.334Z",
+              "changes": {
+                "amount_usd": {
+                  "from": 412,
+                  "to": 1243.23
+                },
+                "amount_cop": {
+                  "from": 1697501.8,
+                  "to": 5122294.084
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-16T02:34:02.981Z",
+              "changes": {
+                "amount_usd": {
+                  "from": 485.419,
+                  "to": 412
+                },
+                "amount_cop": {
+                  "from": 1999999.093,
+                  "to": 1697501.8
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-16T02:32:43.805Z",
+              "changes": {
+                "amount_usd": {
+                  "from": 485.42,
+                  "to": 485.419
+                },
+                "amount_cop": {
+                  "from": 2000003.213,
+                  "to": 1999999.093
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-15T04:18:43.015Z",
+              "changes": {
+                "received": {
+                  "from": false,
+                  "to": true
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-15T04:18:40.264Z",
+              "changes": {
+                "amount_cop": {
+                  "from": 2000000,
+                  "to": 2000003.213
+                },
+                "received": {
+                  "from": true,
+                  "to": false
+                }
+              }
+            }
+          ],
+          "received": true
+        },
+        {
+          "description": "Agatha",
+          "amount_usd": 12.666666666666666,
+          "usd_cop": 4500,
+          "amount_cop": 57000,
+          "created_at": "2026-04-15T16:07:29.352Z",
+          "updated_at": "2026-04-19T17:24:55.345Z",
+          "history": [
+            {
+              "changed_at": "2026-04-19T17:24:55.345Z",
+              "changes": {
+                "amount_usd": {
+                  "from": 12.66,
+                  "to": 12.666666666666666
+                },
+                "amount_cop": {
+                  "from": 56970,
+                  "to": 57000
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-19T17:23:28.984Z",
+              "changes": {
+                "amount_usd": {
+                  "from": 12.666666666666666,
+                  "to": 12.66
+                },
+                "amount_cop": {
+                  "from": 57000,
+                  "to": 56970
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-19T17:23:23.889Z",
+              "changes": {
+                "amount_usd": {
+                  "from": 12.135480504350571,
+                  "to": 12.666666666666666
+                },
+                "amount_cop": {
+                  "from": 54609.66,
+                  "to": 57000
+                }
+              }
+            },
+            {
+              "changed_at": "2026-04-19T17:22:42.207Z",
+              "changes": {
+                "usd_cop": {
+                  "from": 4120.15,
+                  "to": 4500
+                },
+                "amount_cop": {
+                  "from": 50000,
+                  "to": 54609.66
+                }
+              }
+            }
+          ],
+          "received": true
+        }
+      ]
+    },
+    {
+      "name": "May",
+      "month_id": "05-may",
+      "income_usd": 489.13,
+      "usd_cop": 4088.92,
+      "income_cop": 2000000,
+      "entries": [
+        {
+          "description": "Main income",
+          "amount_usd": 489.13,
+          "usd_cop": 4088.92,
+          "amount_cop": 2000000,
+          "created_at": "2026-04-15T15:21:01.000Z",
+          "updated_at": "2026-04-15T15:21:01.000Z",
+          "history": [],
+          "received": true
+        }
+      ]
+    },
+    {
+      "name": "June",
+      "month_id": "06-june",
+      "income_usd": 485.96,
+      "usd_cop": 4115.6,
+      "income_cop": 2000000,
+      "entries": [
+        {
+          "description": "Main income",
+          "amount_usd": 485.96,
+          "usd_cop": 4115.6,
+          "amount_cop": 2000000,
+          "created_at": "2026-04-15T15:21:01.000Z",
+          "updated_at": "2026-04-15T15:21:01.000Z",
+          "history": [],
+          "received": true
+        }
+      ]
+    },
+    {
+      "name": "July",
+      "month_id": "07-july",
+      "income_usd": 482.77,
+      "usd_cop": 4142.73,
+      "income_cop": 2000000,
+      "entries": [
+        {
+          "description": "Main income",
+          "amount_usd": 482.77,
+          "usd_cop": 4142.73,
+          "amount_cop": 2000000,
+          "created_at": "2026-04-15T15:21:01.000Z",
+          "updated_at": "2026-04-15T15:21:01.000Z",
+          "history": [],
+          "received": true
+        }
+      ]
+    },
+    {
+      "name": "August",
+      "month_id": "08-august",
+      "income_usd": 478.65,
+      "usd_cop": 4178.44,
+      "income_cop": 2000000,
+      "entries": [
+        {
+          "description": "Main income",
+          "amount_usd": 478.65,
+          "usd_cop": 4178.44,
+          "amount_cop": 2000000,
+          "created_at": "2026-04-15T15:21:01.000Z",
+          "updated_at": "2026-04-15T15:21:01.000Z",
+          "history": [],
+          "received": true
+        }
+      ]
+    },
+    {
+      "name": "September",
+      "month_id": "09-september",
+      "income_usd": 483.45,
+      "usd_cop": 4136.91,
+      "income_cop": 2000000,
+      "entries": [
+        {
+          "description": "Main income",
+          "amount_usd": 483.45,
+          "usd_cop": 4136.91,
+          "amount_cop": 2000000,
+          "created_at": "2026-04-15T15:21:01.000Z",
+          "updated_at": "2026-04-15T15:21:01.000Z",
+          "history": [],
+          "received": true
+        }
+      ]
+    },
+    {
+      "name": "October",
+      "month_id": "10-october",
+      "income_usd": 488.48,
+      "usd_cop": 4094.33,
+      "income_cop": 2000000,
+      "entries": [
+        {
+          "description": "Main income",
+          "amount_usd": 488.48,
+          "usd_cop": 4094.33,
+          "amount_cop": 2000000,
+          "created_at": "2026-04-15T15:21:01.000Z",
+          "updated_at": "2026-04-15T15:21:01.000Z",
+          "history": [],
+          "received": true
+        }
+      ]
+    },
+    {
+      "name": "November",
+      "month_id": "11-november",
+      "income_usd": 491.57,
+      "usd_cop": 4068.57,
+      "income_cop": 2000000,
+      "entries": [
+        {
+          "description": "Main income",
+          "amount_usd": 491.57,
+          "usd_cop": 4068.57,
+          "amount_cop": 2000000,
+          "created_at": "2026-04-15T15:21:01.000Z",
+          "updated_at": "2026-04-15T15:21:01.000Z",
+          "history": [],
+          "received": true
+        }
+      ]
+    },
+    {
+      "name": "December",
+      "month_id": "12-december",
+      "income_usd": 493.93,
+      "usd_cop": 4049.12,
+      "income_cop": 2000000,
+      "entries": [
+        {
+          "description": "Main income",
+          "amount_usd": 493.93,
+          "usd_cop": 4049.12,
+          "amount_cop": 2000000,
+          "created_at": "2026-04-15T15:21:01.000Z",
+          "updated_at": "2026-04-15T15:21:01.000Z",
+          "history": [],
+          "received": true
+        }
+      ]
+    }
+  ]
+}

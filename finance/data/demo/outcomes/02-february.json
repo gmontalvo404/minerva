@@ -1,0 +1,172 @@
+{
+  "entries": [
+    {
+      "description": "Room rent",
+      "category": "Housing",
+      "amount_cop": 680000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-18T21:37:02.474Z",
+      "history": [
+        {
+          "changed_at": "2026-04-18T21:37:02.474Z",
+          "changes": {
+            "paid": {
+              "from": false,
+              "to": true
+            }
+          }
+        },
+        {
+          "changed_at": "2026-04-18T21:36:54.032Z",
+          "changes": {
+            "paid": {
+              "from": true,
+              "to": false
+            }
+          }
+        }
+      ],
+      "type": "needs",
+      "paid": true
+    },
+    {
+      "description": "Groceries",
+      "category": "Market",
+      "amount_cop": 295000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "needs",
+      "paid": true
+    },
+    {
+      "description": "Transport card",
+      "category": "Cash",
+      "amount_cop": 175000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-18T21:37:03.222Z",
+      "history": [
+        {
+          "changed_at": "2026-04-18T21:37:03.222Z",
+          "changes": {
+            "paid": {
+              "from": false,
+              "to": true
+            }
+          }
+        },
+        {
+          "changed_at": "2026-04-18T21:36:54.897Z",
+          "changes": {
+            "paid": {
+              "from": true,
+              "to": false
+            }
+          }
+        }
+      ],
+      "type": "needs",
+      "paid": true
+    },
+    {
+      "description": "Cellphone plan",
+      "category": "Technology",
+      "amount_cop": 42000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "needs",
+      "paid": true
+    },
+    {
+      "description": "Utilities share",
+      "category": "Housing",
+      "amount_cop": 85000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "needs",
+      "paid": true
+    },
+    {
+      "description": "Personal care",
+      "category": "Personal care",
+      "amount_cop": 40000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "needs",
+      "paid": true
+    },
+    {
+      "description": "Pharmacy / clinic",
+      "category": "Health",
+      "amount_cop": 25000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "needs",
+      "paid": true
+    },
+    {
+      "description": "Streaming apps",
+      "category": "Entertainment",
+      "amount_cop": 28000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "wants",
+      "paid": true
+    },
+    {
+      "description": "Gym membership",
+      "category": "GYM",
+      "amount_cop": 65000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "wants",
+      "paid": true
+    },
+    {
+      "description": "Coffee and going out",
+      "category": "Restaurant",
+      "amount_cop": 90000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "wants",
+      "paid": true
+    },
+    {
+      "description": "Birthday / family gift",
+      "category": "Family",
+      "amount_cop": 30000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "wants",
+      "paid": true
+    },
+    {
+      "description": "Emergency fund",
+      "category": "Emergency fund",
+      "amount_cop": 80000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "savings",
+      "paid": true
+    },
+    {
+      "description": "Phone installment",
+      "category": "Debt",
+      "amount_cop": 120000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "debts",
+      "paid": true
+    }
+  ]
+}

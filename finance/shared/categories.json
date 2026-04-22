@@ -1,0 +1,112 @@
+{
+  "categories": [
+    {
+      "name": "Food"
+    },
+    {
+      "name": "Market"
+    },
+    {
+      "name": "Cash"
+    },
+    {
+      "name": "Fuel"
+    },
+    {
+      "name": "Gift"
+    },
+    {
+      "name": "Housing"
+    },
+    {
+      "name": "Motorcycle"
+    },
+    {
+      "name": "Entertainment"
+    },
+    {
+      "name": "Clothing"
+    },
+    {
+      "name": "Technology"
+    },
+    {
+      "name": "Travel"
+    },
+    {
+      "name": "Health"
+    },
+    {
+      "name": "Finances"
+    },
+    {
+      "name": "Pets"
+    },
+    {
+      "name": "Donations"
+    },
+    {
+      "name": "Restaurant"
+    },
+    {
+      "name": "Education"
+    },
+    {
+      "name": "Taxes"
+    },
+    {
+      "name": "Incomes"
+    },
+    {
+      "name": "Free"
+    },
+    {
+      "name": "Family"
+    },
+    {
+      "name": "Loan"
+    },
+    {
+      "name": "Saving"
+    },
+    {
+      "name": "Debt"
+    },
+    {
+      "name": "Social Security"
+    },
+    {
+      "name": "Emergency fund"
+    },
+    {
+      "name": "Retirement"
+    },
+    {
+      "name": "Personal care"
+    },
+    {
+      "name": "Trips"
+    },
+    {
+      "name": "Farmacy"
+    },
+    {
+      "name": "I don't know"
+    },
+    {
+      "name": "Supermarket"
+    },
+    {
+      "name": "Bakery"
+    },
+    {
+      "name": "GYM"
+    },
+    {
+      "name": "Wants"
+    },
+    {
+      "name": "Housekeeper"
+    }
+  ]
+}

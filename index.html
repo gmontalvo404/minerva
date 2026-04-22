@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cash Flow Dashboard</title>
+    <script>
+      (() => {
+        try {
+          const storedTheme = localStorage.getItem("cashflow-dashboard-theme");
+          document.documentElement.dataset.theme = storedTheme === "dark" ? "dark" : "light";
+        } catch (error) {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Marcellus&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="control-sidebar">
+        <div class="control-sidebar__inner">
+          <div class="control-sidebar__controls">
+            <div class="field">
+              <span class="field__label" data-i18n="language_label"></span>
+              <div class="view-switch view-switch--compact language-switch">
+                <button
+                  id="language-en"
+                  class="view-button"
+                  type="button"
+                  data-language="en"
+                >
+                  EN
+                </button>
+                <button
+                  id="language-es"
+                  class="view-button"
+                  type="button"
+                  data-language="es"
+                >
+                  ES
+                </button>
+              </div>
+            </div>
+
+            <label class="field" for="year-select">
+              <span class="field__label" data-i18n="year_label"></span>
+              <div class="select-shell">
+                <select id="year-select" class="select"></select>
+              </div>
+            </label>
+
+            <div class="field">
+              <span class="field__label" data-i18n="theme_label"></span>
+              <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">
+                <span class="theme-toggle__track" aria-hidden="true">
+                  <span class="theme-toggle__sun-glow"></span>
+                  <span class="theme-toggle__band theme-toggle__band--1"></span>
+                  <span class="theme-toggle__band theme-toggle__band--2"></span>
+                  <span class="theme-toggle__cloud theme-toggle__cloud--small"></span>
+                  <span class="theme-toggle__cloud theme-toggle__cloud--large"></span>
+                  <span class="theme-toggle__star theme-toggle__star--1"></span>
+                  <span class="theme-toggle__star theme-toggle__star--2"></span>
+                  <span class="theme-toggle__star theme-toggle__star--3"></span>
+                  <span class="theme-toggle__star theme-toggle__star--4"></span>
+                  <span class="theme-toggle__thumb"></span>
+                </span>
+                <span id="theme-toggle-text" class="visually-hidden"></span>
+              </button>
+            </div>
+
+          </div>
+
+          <div class="field">
+            <span class="field__label" data-i18n="view_label"></span>
+            <section id="sidebar-months" class="control-sidebar__months">
+              <button
+                id="view-annual-button"
+                class="month-button control-sidebar__annual-button"
+                type="button"
+                data-view-mode="annual"
+                data-i18n="view_annual"
+              ></button>
+              <div id="sidebar-month-nav" class="month-nav month-nav--sidebar"></div>
+            </section>
+          </div>
+
+        </div>
+      </aside>
+
+      <div class="content-shell">
+        <header class="hero">
+          <div class="hero__copy">
+            <div class="hero__content">
+              <span id="hero-chip" class="hero__chip"></span>
+              <h1 id="hero-title" data-i18n="hero_title"></h1>
+              <p id="hero-lede" class="hero__lede" data-i18n="hero_lede"></p>
+            </div>
+          </div>
+        </header>
+
+        <main class="layout">
+          <section id="annual-panel" class="panel">
+          <div class="section-head">
+            <div>
+              <p class="section-head__eyebrow" data-i18n="annual_section_eyebrow"></p>
+              <h2 id="annual-title"></h2>
+            </div>
+            <p id="annual-note" class="section-head__note" data-i18n="annual_note"></p>
+          </div>
+
+          <div id="annual-kpis" class="kpi-grid"></div>
+
+          <div class="chart-grid chart-grid--annual">
+            <article class="card">
+              <div class="card__head">
+                <div>
+                  <p class="card__eyebrow" data-i18n="annual_free_eyebrow"></p>
+                  <h3 data-i18n="annual_free_title"></h3>
+                </div>
+              </div>
+              <div id="annual-free-chart" class="free-bars"></div>
+            </article>
+
+            <article class="card">
+              <div class="card__head">
+                <div>
+                  <p class="card__eyebrow" data-i18n="distribution_eyebrow"></p>
+                  <h3 data-i18n="annual_distribution_title"></h3>
+                </div>
+              </div>
+              <div id="annual-donut" class="donut-layout"></div>
+            </article>
+          </div>
+
+          <article class="card">
+            <div class="card__head">
+              <div>
+                <p class="card__eyebrow" data-i18n="categories_eyebrow"></p>
+                <h3 data-i18n="annual_categories_title"></h3>
+              </div>
+              <div class="sort-controls">
+                <span class="sort-controls__label" data-i18n="category_sort_label"></span>
+                <div class="view-switch view-switch--compact view-switch--sort">
+                  <button
+                    class="view-button"
+                    type="button"
+                    data-category-sort="name"
+                    data-i18n="category_sort_name"
+                  ></button>
+                  <button
+                    class="view-button"
+                    type="button"
+                    data-category-sort="value"
+                  ></button>
+                </div>
+              </div>
+            </div>
+            <div id="annual-category-bars" class="bar-list"></div>
+          </article>
+
+          <article class="card">
+            <div class="card__head">
+              <div>
+                <p class="card__eyebrow" data-i18n="detail_eyebrow"></p>
+                <h3 data-i18n="annual_table_title"></h3>
+              </div>
+              <div class="sort-controls">
+                <span class="sort-controls__label" data-i18n="annual_table_currency_label"></span>
+                <div class="view-switch view-switch--compact view-switch--sort">
+                  <button
+                    class="view-button"
+                    type="button"
+                    data-annual-currency="cop"
+                    data-i18n="currency_cop"
+                  ></button>
+                  <button
+                    class="view-button"
+                    type="button"
+                    data-annual-currency="usd"
+                    data-i18n="currency_usd"
+                  ></button>
+                </div>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table id="annual-summary-table" class="data-table data-table--annual"></table>
+            </div>
+          </article>
+        </section>
+
+        <section id="monthly-panel" class="panel">
+          <div class="section-head section-head--stack">
+            <div>
+              <p class="section-head__eyebrow" data-i18n="monthly_section_eyebrow"></p>
+              <h2 id="month-title"></h2>
+            </div>
+          </div>
+
+          <div id="monthly-kpis" class="kpi-grid"></div>
+
+          <div class="chart-grid">
+            <article class="card">
+              <div class="card__head">
+                <div>
+                  <p class="card__eyebrow" data-i18n="monthly_budget_eyebrow"></p>
+                  <h3 data-i18n="monthly_budget_title"></h3>
+                </div>
+              </div>
+              <div class="table-scroll table-scroll--compact">
+                <table id="monthly-summary-table" class="data-table"></table>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="card__head">
+                <div>
+                  <p class="card__eyebrow" data-i18n="distribution_eyebrow"></p>
+                  <h3 data-i18n="monthly_distribution_title"></h3>
+                </div>
+              </div>
+              <div id="monthly-donut" class="donut-layout"></div>
+            </article>
+          </div>
+
+          <article class="card">
+            <div class="card__head card__head--detail">
+              <div>
+                <p class="card__eyebrow" data-i18n="monthly_incomes_eyebrow"></p>
+                <h3 data-i18n="monthly_incomes_title"></h3>
+              </div>
+              <button
+                id="add-income-button"
+                class="button button--compact button--entry-add"
+                type="button"
+                data-i18n="add_income_button"
+              ></button>
+            </div>
+            <p class="card__note card__note--detail" data-i18n="monthly_incomes_note"></p>
+            <div class="table-scroll">
+              <table id="monthly-incomes-table" class="data-table data-table--entries data-table--income-entries"></table>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card__head">
+              <div>
+                <p class="card__eyebrow" data-i18n="monthly_outcomes_eyebrow"></p>
+                <h3 data-i18n="monthly_outcomes_title"></h3>
+              </div>
+              <div class="sort-controls">
+                <span class="sort-controls__label" data-i18n="category_sort_label"></span>
+                <div class="view-switch view-switch--compact view-switch--sort">
+                  <button
+                    class="view-button"
+                    type="button"
+                    data-category-sort="name"
+                    data-i18n="category_sort_name"
+                  ></button>
+                  <button
+                    class="view-button"
+                    type="button"
+                    data-category-sort="value"
+                  ></button>
+                </div>
+              </div>
+            </div>
+            <div id="monthly-category-bars" class="bar-list"></div>
+          </article>
+
+          <article class="card">
+            <div class="card__head card__head--detail">
+              <div>
+                <p class="card__eyebrow" data-i18n="monthly_detail_eyebrow"></p>
+                <h3 data-i18n="monthly_detail_title"></h3>
+              </div>
+              <button
+                id="add-entry-button"
+                class="button button--compact button--entry-add"
+                type="button"
+                data-i18n="add_entry_button"
+              ></button>
+            </div>
+            <p class="card__note card__note--detail" data-i18n="monthly_detail_note"></p>
+            <div class="table-scroll">
+              <table id="monthly-entries-table" class="data-table data-table--entries"></table>
+            </div>
+          </article>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <template id="empty-state-template">
+      <div class="empty-state">
+        <h3>Data could not be loaded</h3>
+        <p id="empty-state-message"></p>
+      </div>
+    </template>
+
+    <dialog id="entry-history-dialog" class="history-dialog">
+      <form method="dialog" class="history-dialog__panel">
+        <div class="history-dialog__head">
+          <div>
+            <p id="history-dialog-eyebrow" class="card__eyebrow"></p>
+            <h3 id="history-dialog-title"></h3>
+          </div>
+          <button id="history-dialog-close" class="history-dialog__close" type="submit">×</button>
+        </div>
+        <div id="history-dialog-body" class="history-dialog__body"></div>
+      </form>
+    </dialog>
+
+    <dialog id="create-entry-dialog" class="history-dialog create-entry-dialog">
+      <form id="create-entry-form" class="history-dialog__panel movement-dialog__panel">
+        <div class="history-dialog__head">
+          <div>
+            <p id="create-entry-dialog-eyebrow" class="card__eyebrow" data-i18n="create_entry_eyebrow"></p>
+            <h3 id="create-entry-dialog-title" data-i18n="create_entry_title"></h3>
+          </div>
+          <button id="create-entry-dialog-close" class="history-dialog__close" type="button">×</button>
+        </div>
+
+        <div class="movement-form__grid">
+          <label class="field" for="create-entry-description">
+            <span class="field__label" data-i18n="monthly_entries_description"></span>
+            <input
+              id="create-entry-description"
+              name="description"
+              class="entry-input"
+              type="text"
+              required
+            />
+          </label>
+
+          <label class="field" for="create-entry-category">
+            <span class="field__label" data-i18n="monthly_entries_category"></span>
+            <div class="entry-select-shell">
+              <select
+                id="create-entry-category"
+                name="category"
+                class="entry-select entry-select--category"
+                required
+              ></select>
+            </div>
+          </label>
+
+          <label class="field" for="create-entry-type">
+            <span class="field__label" data-i18n="monthly_entries_type"></span>
+            <div id="create-entry-type-shell" class="entry-type-shell">
+              <select id="create-entry-type" name="type" class="entry-select entry-select--type" required></select>
+            </div>
+          </label>
+
+          <label class="field" for="create-entry-amount">
+            <span class="field__label" data-i18n="monthly_entries_cop"></span>
+            <input
+              id="create-entry-amount"
+              name="amount_cop"
+              class="entry-input entry-input--amount"
+              type="number"
+              step="0.01"
+              inputmode="decimal"
+              min="0"
+              required
+            />
+          </label>
+
+          <label class="field movement-form__active" for="create-entry-paid">
+            <span class="field__label" data-i18n="monthly_entries_paid"></span>
+            <span class="movement-form__active-control">
+              <span class="movement-form__active-text" data-i18n="create_entry_paid_hint"></span>
+              <span class="entry-active-toggle">
+                <input
+                  id="create-entry-paid"
+                  name="paid"
+                  class="entry-active-toggle__input"
+                  type="checkbox"
+                  checked
+                />
+                <span class="entry-active-toggle__ui" aria-hidden="true"></span>
+              </span>
+            </span>
+          </label>
+        </div>
+
+        <div class="movement-form__actions">
+          <button
+            id="create-entry-cancel"
+            class="entry-history-button movement-form__cancel"
+            type="button"
+            data-i18n="create_entry_cancel"
+          ></button>
+          <button
+            id="create-entry-submit"
+            class="button button--compact button--entry-add"
+            type="submit"
+            data-i18n="create_entry_submit"
+          ></button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="create-income-dialog" class="history-dialog create-entry-dialog">
+      <form id="create-income-form" class="history-dialog__panel movement-dialog__panel">
+        <div class="history-dialog__head">
+          <div>
+            <p id="create-income-dialog-eyebrow" class="card__eyebrow" data-i18n="create_income_eyebrow"></p>
+            <h3 id="create-income-dialog-title" data-i18n="create_income_title"></h3>
+          </div>
+          <button id="create-income-dialog-close" class="history-dialog__close" type="button">×</button>
+        </div>
+
+        <div class="movement-form__grid movement-form__grid--income">
+          <label class="field" for="create-income-description">
+            <span class="field__label" data-i18n="monthly_entries_description"></span>
+            <input
+              id="create-income-description"
+              name="description"
+              class="entry-input"
+              type="text"
+              required
+            />
+          </label>
+
+          <label class="field" for="create-income-usd">
+            <span class="field__label" data-i18n="monthly_entries_usd"></span>
+            <input
+              id="create-income-usd"
+              name="amount_usd"
+              class="entry-input entry-input--amount"
+              type="number"
+              step="any"
+              inputmode="decimal"
+              min="0"
+            />
+          </label>
+
+          <label class="field" for="create-income-fx">
+            <span class="field__label" data-i18n="monthly_income_fx"></span>
+            <input
+              id="create-income-fx"
+              name="usd_cop"
+              class="entry-input entry-input--amount"
+              type="number"
+              step="any"
+              inputmode="decimal"
+              min="0"
+              required
+            />
+          </label>
+
+          <label class="field" for="create-income-cop">
+            <span class="field__label" data-i18n="monthly_entries_cop"></span>
+            <input
+              id="create-income-cop"
+              name="amount_cop"
+              class="entry-input entry-input--amount"
+              type="number"
+              step="any"
+              inputmode="decimal"
+              min="0"
+            />
+          </label>
+
+          <label class="field movement-form__active" for="create-income-received">
+            <span class="field__label" data-i18n="monthly_income_received"></span>
+            <span class="movement-form__active-control">
+              <span class="movement-form__active-text" data-i18n="create_income_received_hint"></span>
+              <span class="entry-active-toggle">
+                <input
+                  id="create-income-received"
+                  name="received"
+                  class="entry-active-toggle__input"
+                  type="checkbox"
+                  checked
+                />
+                <span class="entry-active-toggle__ui" aria-hidden="true"></span>
+              </span>
+            </span>
+          </label>
+        </div>
+
+        <div class="movement-form__actions">
+          <button
+            id="create-income-cancel"
+            class="entry-history-button movement-form__cancel"
+            type="button"
+            data-i18n="create_income_cancel"
+          ></button>
+          <button
+            id="create-income-submit"
+            class="button button--compact button--entry-add"
+            type="submit"
+            data-i18n="create_income_submit"
+          ></button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog
+      id="delete-confirm-dialog"
+      class="history-dialog delete-confirm-dialog"
+      aria-labelledby="delete-confirm-title"
+      aria-describedby="delete-confirm-message"
+    >
+      <form id="delete-confirm-form" method="dialog" class="history-dialog__panel delete-confirm-dialog__panel">
+        <div class="history-dialog__head">
+          <div>
+            <p class="card__eyebrow" data-i18n="delete_confirm_eyebrow"></p>
+            <h3 id="delete-confirm-title"></h3>
+          </div>
+          <button
+            id="delete-confirm-close"
+            class="history-dialog__close"
+            type="submit"
+            value="cancel"
+            aria-label="Cancel"
+          >
+            ×
+          </button>
+        </div>
+
+        <div class="delete-confirm-dialog__content">
+          <p id="delete-confirm-message" class="delete-confirm-dialog__message"></p>
+
+          <div class="delete-confirm-dialog__record">
+            <span class="delete-confirm-dialog__icon" aria-hidden="true">!</span>
+            <p id="delete-confirm-summary" class="delete-confirm-dialog__summary"></p>
+          </div>
+        </div>
+
+        <div class="delete-confirm-dialog__actions">
+          <button
+            id="delete-confirm-submit"
+            class="button button--compact delete-confirm-dialog__submit"
+            type="button"
+            value="confirm"
+            data-i18n="delete_confirm_submit"
+          ></button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
