@@ -126,7 +126,7 @@ const I18N = {
     monthly_detail_eyebrow: "Detalle mensual",
     monthly_detail_title: "Movimientos del mes",
     monthly_detail_note: "",
-    add_entry_button: "Agregar movimiento",
+    add_entry_button: "+",
     create_entry_eyebrow: "Nuevo movimiento",
     create_entry_title: "Agregar movimiento",
     create_entry_submit: "Agregar",
@@ -179,6 +179,7 @@ const I18N = {
     monthly_summary_usd: "USD",
     monthly_summary_income_share: "% ingreso",
     monthly_summary_incomes: "Ingresos",
+    monthly_summary_after_paid: "Disponible después de pagos",
     monthly_entries_number: "No.",
     monthly_entries_description: "Descripción",
     monthly_income_received: "Recibido",
@@ -298,7 +299,7 @@ const I18N = {
     monthly_detail_eyebrow: "Monthly detail",
     monthly_detail_title: "Monthly entries",
     monthly_detail_note: "",
-    add_entry_button: "Add movement",
+    add_entry_button: "+",
     create_entry_eyebrow: "New movement",
     create_entry_title: "Add movement",
     create_entry_submit: "Add",
@@ -351,6 +352,7 @@ const I18N = {
     monthly_summary_usd: "USD",
     monthly_summary_income_share: "% income",
     monthly_summary_incomes: "Incomes",
+    monthly_summary_after_paid: "Available after paid",
     monthly_entries_number: "No.",
     monthly_entries_description: "Description",
     monthly_income_received: "Received",
@@ -1010,6 +1012,9 @@ function buildDashboard(raw, year) {
       TYPE_ORDER.map((typeKey) => [typeKey, types[typeKey].total]),
     );
     const totalOutcomes = normalizeCop(sum(plannedEntries.map((entry) => entry.amountCop)));
+    const paidOutcomes = normalizeCop(
+      sum(plannedEntries.filter((entry) => entry.paid).map((entry) => entry.amountCop)),
+    );
     const free = normalizeCop(incomeCop - totalOutcomes);
     const displayEntries = free > 0 ? [...plannedEntries, buildFreeDisplayEntry(free)] : plannedEntries;
     const displayTypes = buildMonthlyDisplayTypes(typeTotals, free);
@@ -1027,6 +1032,7 @@ function buildDashboard(raw, year) {
       types,
       entries: [...plannedEntries].sort(compareEntries),
       allEntries: [...plannedEntries].sort(compareEntries),
+      paidOutcomes,
       categoryTotals: aggregateBy(displayEntries, "category"),
       displayTypes,
       segments: buildMonthlySegments(displayTypes, free),
@@ -1720,6 +1726,12 @@ function renderMonthlySummaryTable(table, month) {
       usdValue: month.usdCop > 0 ? normalizeUsd(month.displayTypes[typeKey] / month.usdCop) : 0,
       ratio: month.incomeCop > 0 ? (month.displayTypes[typeKey] / month.incomeCop) * 100 : 0,
     })),
+    {
+      label: t("monthly_summary_after_paid"),
+      value: normalizeCop(month.incomeCop - month.paidOutcomes),
+      usdValue: month.usdCop > 0 ? normalizeUsd((month.incomeCop - month.paidOutcomes) / month.usdCop) : 0,
+      ratio: month.incomeCop > 0 ? ((month.incomeCop - month.paidOutcomes) / month.incomeCop) * 100 : 0,
+    },
   ];
 
   if (month.free < 0) {
@@ -1728,6 +1740,7 @@ function renderMonthlySummaryTable(table, month) {
       value: Math.abs(month.free),
       usdValue: month.usdCop > 0 ? normalizeUsd(Math.abs(month.free) / month.usdCop) : 0,
       ratio: month.incomeCop > 0 ? (Math.abs(month.free) / month.incomeCop) * 100 : 0,
+      rowClass: "is-summary",
     });
   }
 
@@ -1743,8 +1756,8 @@ function renderMonthlySummaryTable(table, month) {
     <tbody>
       ${rows
         .map(
-          (row, index) => `
-            <tr class="${index === rows.length - 1 ? "is-summary" : ""}">
+          (row) => `
+            <tr class="${escapeHtml(row.rowClass || "")}">
               <td>${escapeHtml(row.label)}</td>
               <td>${escapeHtml(formatCopNoCode(row.value))}</td>
               <td>${escapeHtml(formatUsd(row.usdValue))}</td>
