@@ -192,10 +192,15 @@ const I18N = {
     monthly_income_fx: "FX",
     monthly_entries_history: "Histórico",
     monthly_entries_delete: "Eliminar",
+    monthly_entries_options: "Opciones",
     move_drag_handle: "Arrastrar para mover",
     move_up_button: "Subir",
     move_down_button: "Bajar",
     history_button: "Ver",
+    entry_actions_button_label: "Opciones del movimiento",
+    entry_action_history: "Ver histórico",
+    entry_action_delete: "Eliminar movimiento",
+    entry_action_duplicate: "Duplicar movimiento",
     delete_button: "×",
     delete_button_label: "Eliminar",
     delete_entry_confirm_title: "¿Eliminar este movimiento?",
@@ -220,6 +225,7 @@ const I18N = {
     save_entry_error: "No se pudo guardar el cambio del movimiento. Verifica que la app esté abierta con `python3 server.py`.",
     reorder_entry_error: "No se pudo mover el movimiento. Verifica que la app esté abierta con `python3 server.py`.",
     create_entry_error: "No se pudo agregar el movimiento. Verifica que la app esté abierta con `python3 server.py`.",
+    duplicate_entry_error: "No se pudo duplicar el movimiento. Verifica que la app esté abierta con `python3 server.py`.",
     delete_entry_error: "No se pudo eliminar el movimiento. Verifica que la app esté abierta con `python3 server.py`.",
     save_income_error: "No se pudo guardar el cambio del ingreso. Verifica que la app esté abierta con `python3 server.py`.",
     reorder_income_error: "No se pudo mover el ingreso. Verifica que la app esté abierta con `python3 server.py`.",
@@ -365,10 +371,15 @@ const I18N = {
     monthly_income_fx: "FX",
     monthly_entries_history: "History",
     monthly_entries_delete: "Delete",
+    monthly_entries_options: "Options",
     move_drag_handle: "Drag to reorder",
     move_up_button: "Move up",
     move_down_button: "Move down",
     history_button: "View",
+    entry_actions_button_label: "Movement options",
+    entry_action_history: "View history",
+    entry_action_delete: "Delete movement",
+    entry_action_duplicate: "Duplicate movement",
     delete_button: "×",
     delete_button_label: "Delete",
     delete_entry_confirm_title: "Delete this movement?",
@@ -396,6 +407,8 @@ const I18N = {
       "The movement could not be reordered. Make sure the app is running with `python3 server.py`.",
     create_entry_error:
       "The movement could not be added. Make sure the app is running with `python3 server.py`.",
+    duplicate_entry_error:
+      "The movement could not be duplicated. Make sure the app is running with `python3 server.py`.",
     delete_entry_error:
       "The movement could not be deleted. Make sure the app is running with `python3 server.py`.",
     save_income_error:
@@ -601,6 +614,7 @@ let createIncomeAmountMode = "usd";
 let createIncomeFxUserEdited = false;
 let liveUsdCopRateRequest = null;
 let activePrettySelect = null;
+let activeEntryActionsMenu = null;
 let deleteConfirmResolver = null;
 let prettySelectIdSequence = 0;
 const prettySelectBindings = new WeakMap();
@@ -627,6 +641,10 @@ function init() {
   dom.monthlyEntriesTable.addEventListener("drop", handleMonthlyEntryDrop);
   dom.monthlyEntriesTable.addEventListener("dragend", handleMonthlyEntryDragEnd);
   dom.monthlyEntriesTable.addEventListener("dragleave", handleMonthlyEntryDragLeave);
+  document.addEventListener("click", handleEntryActionsDocumentClick);
+  document.addEventListener("keydown", handleEntryActionsKeyDown);
+  window.addEventListener("resize", closeEntryActionsMenu);
+  document.addEventListener("scroll", closeEntryActionsMenu, true);
   dom.yearSelect.addEventListener("change", () => {
     const nextYear = dom.yearSelect.value;
     if (nextYear && nextYear !== state.selectedYear) {
@@ -1912,12 +1930,13 @@ function renderMonthlyIncomesTable(table, month) {
 
 function renderMonthlyEntriesTable(table, month) {
   monthlyEntryDragState = null;
+  closeEntryActionsMenu();
   const categoryOptions = renderCategoryOptions(month.allEntries);
   const typeOptions = renderTypeOptions();
   table.innerHTML = `
     <thead>
       <tr>
-        <th aria-label="${escapeHtml(t("delete_button_label"))}"></th>
+        <th aria-label="${escapeHtml(t("monthly_entries_options"))}"></th>
         <th>${escapeHtml(t("monthly_entries_number"))}</th>
         <th>${escapeHtml(t("monthly_entries_move"))}</th>
         <th>${escapeHtml(t("monthly_entries_paid"))}</th>
@@ -1926,7 +1945,6 @@ function renderMonthlyEntriesTable(table, month) {
         <th>${escapeHtml(t("monthly_entries_category"))}</th>
         <th>${escapeHtml(t("monthly_entries_cop"))}</th>
         <th>${escapeHtml(t("monthly_entries_usd"))}</th>
-        <th>${escapeHtml(t("monthly_entries_history"))}</th>
       </tr>
     </thead>
     <tbody>
@@ -1941,16 +1959,34 @@ function renderMonthlyEntriesTable(table, month) {
               data-entry-index="${entry.sourceIndex}"
               data-entry-type="${escapeHtml(entry.typeKey)}"
             >
-              <td class="entry-cell entry-cell--delete">
-                <button
-                  class="entry-delete-button"
-                  type="button"
-                  title="${escapeHtml(t("delete_button_label"))}"
-                  aria-label="${escapeHtml(t("delete_button_label"))}"
-                  data-entry-delete="true"
-                  data-entry-path="${escapeHtml(entry.sourcePath)}"
-                  data-entry-index="${entry.sourceIndex}"
-                >${escapeHtml(t("delete_button"))}</button>
+              <td class="entry-cell entry-cell--actions">
+                <div class="entry-actions">
+                  <button
+                    class="entry-actions-button"
+                    type="button"
+                    title="${escapeHtml(t("entry_actions_button_label"))}"
+                    aria-label="${escapeHtml(t("entry_actions_button_label"))}"
+                    aria-haspopup="menu"
+                    aria-expanded="false"
+                    data-entry-actions-toggle="true"
+                    data-entry-path="${escapeHtml(entry.sourcePath)}"
+                    data-entry-index="${entry.sourceIndex}"
+                  >
+                    <svg
+                      class="entry-actions-button__icon"
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M9.67 4.14a2.34 2.34 0 0 1 4.66 0 2.34 2.34 0 0 0 3.32 1.91 2.34 2.34 0 0 1 2.33 4.03 2.34 2.34 0 0 0 0 3.84 2.34 2.34 0 0 1-2.33 4.03 2.34 2.34 0 0 0-3.32 1.91 2.34 2.34 0 0 1-4.66 0 2.34 2.34 0 0 0-3.32-1.91 2.34 2.34 0 0 1-2.33-4.03 2.34 2.34 0 0 0 0-3.84 2.34 2.34 0 0 1 2.33-4.03 2.34 2.34 0 0 0 3.32-1.91Z"></path>
+                      <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                  </button>
+                </div>
               </td>
               <td class="entry-cell entry-cell--number">
                 <span class="entry-row-number">${escapeHtml(String(index + 1))}</span>
@@ -2039,15 +2075,6 @@ function renderMonthlyEntriesTable(table, month) {
               </td>
               <td class="entry-cell entry-cell--usd">
                 <span class="entry-usd-value">${escapeHtml(formatUsd(entry.amountUsd))}</span>
-              </td>
-              <td class="entry-cell entry-cell--history">
-                <button
-                  class="entry-history-button"
-                  type="button"
-                  data-entry-history="true"
-                  data-entry-path="${escapeHtml(entry.sourcePath)}"
-                  data-entry-index="${entry.sourceIndex}"
-                >${escapeHtml(t("history_button"))}</button>
               </td>
             </tr>
           `;
@@ -3380,47 +3407,220 @@ function handleMonthlyEntryDragEnd() {
   clearMonthlyEntryDropIndicators();
 }
 
-async function handleMonthlyEntryActions(event) {
-  const month = state.dashboard?.months?.[state.selectedMonthIndex];
-  if (!month) {
-    return;
-  }
+function buildDuplicateEntryPayload(entry) {
+  return {
+    paid: entry.paid,
+    type: entry.typeKey,
+    description: entry.descriptionRaw,
+    category: entry.categoryRaw,
+    amount_cop: entry.amountCop,
+  };
+}
 
-  const historyButton = event.target.closest("[data-entry-history='true']");
-  if (historyButton instanceof HTMLButtonElement) {
-    const sourcePath = historyButton.dataset.entryPath;
-    const sourceIndex = Number(historyButton.dataset.entryIndex);
-    if (!sourcePath || !Number.isInteger(sourceIndex)) {
-      return;
-    }
-
-    const entry = month.allEntries.find(
-      (candidate) => candidate.sourcePath === sourcePath && candidate.sourceIndex === sourceIndex,
-    );
-
-    if (!entry) {
-      return;
-    }
-
-    openEntryHistoryDialog(entry);
-    return;
-  }
-
-  const deleteButton = event.target.closest("[data-entry-delete='true']");
-  if (!(deleteButton instanceof HTMLButtonElement)) {
-    return;
-  }
-
-  const sourcePath = deleteButton.dataset.entryPath;
-  const sourceIndex = Number(deleteButton.dataset.entryIndex);
+function toggleEntryActionsMenu(button) {
+  const sourcePath = button.dataset.entryPath;
+  const sourceIndex = Number(button.dataset.entryIndex);
   if (!sourcePath || !Number.isInteger(sourceIndex)) {
     return;
   }
 
-  const entry = month.allEntries.find(
-    (candidate) => candidate.sourcePath === sourcePath && candidate.sourceIndex === sourceIndex,
-  );
+  if (
+    activeEntryActionsMenu?.button === button &&
+    activeEntryActionsMenu.sourcePath === sourcePath &&
+    activeEntryActionsMenu.sourceIndex === sourceIndex
+  ) {
+    closeEntryActionsMenu();
+    return;
+  }
 
+  openEntryActionsMenu(button, sourcePath, sourceIndex);
+}
+
+function openEntryActionsMenu(button, sourcePath, sourceIndex) {
+  closeEntryActionsMenu();
+  const menu = document.createElement("div");
+  menu.className = "entry-actions-menu";
+  menu.setAttribute("role", "menu");
+  menu.dataset.entryActionsMenu = "true";
+  menu.dataset.entryPath = sourcePath;
+  menu.dataset.entryIndex = String(sourceIndex);
+  menu.style.visibility = "hidden";
+  menu.innerHTML = `
+    <button
+      class="entry-actions-menu__item"
+      type="button"
+      role="menuitem"
+      data-entry-duplicate="true"
+    >${escapeHtml(t("entry_action_duplicate"))}</button>
+    <button
+      class="entry-actions-menu__item entry-actions-menu__item--danger"
+      type="button"
+      role="menuitem"
+      data-entry-delete="true"
+    >${escapeHtml(t("entry_action_delete"))}</button>
+    <button
+      class="entry-actions-menu__item"
+      type="button"
+      role="menuitem"
+      data-entry-history="true"
+    >${escapeHtml(t("entry_action_history"))}</button>
+  `;
+  document.body.append(menu);
+  menu.hidden = false;
+  button.setAttribute("aria-expanded", "true");
+  activeEntryActionsMenu = { button, menu, sourcePath, sourceIndex };
+  positionEntryActionsMenu(button, menu);
+  menu.style.visibility = "";
+}
+
+function positionEntryActionsMenu(button, menu) {
+  const rect = button.getBoundingClientRect();
+  const viewportPadding = 12;
+  const gap = 8;
+  const menuWidth = menu.offsetWidth;
+  const menuHeight = menu.offsetHeight;
+  const left = Math.min(
+    Math.max(viewportPadding, rect.left),
+    Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding),
+  );
+  const belowTop = rect.bottom + gap;
+  const aboveTop = rect.top - menuHeight - gap;
+  const top = belowTop + menuHeight > window.innerHeight - viewportPadding
+    ? Math.max(viewportPadding, aboveTop)
+    : belowTop;
+
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+}
+
+function closeEntryActionsMenu() {
+  if (!activeEntryActionsMenu) {
+    return;
+  }
+
+  activeEntryActionsMenu.button.setAttribute("aria-expanded", "false");
+  activeEntryActionsMenu.menu.remove();
+  activeEntryActionsMenu = null;
+}
+
+async function handleEntryActionsDocumentClick(event) {
+  if (!activeEntryActionsMenu) {
+    return;
+  }
+
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    closeEntryActionsMenu();
+    return;
+  }
+
+  const historyButton = target.closest("[data-entry-history='true']");
+  if (historyButton instanceof HTMLButtonElement && activeEntryActionsMenu.menu.contains(historyButton)) {
+    const { sourcePath, sourceIndex } = activeEntryActionsMenu;
+    closeEntryActionsMenu();
+    openMonthlyEntryHistory(sourcePath, sourceIndex);
+    return;
+  }
+
+  const duplicateButton = target.closest("[data-entry-duplicate='true']");
+  if (duplicateButton instanceof HTMLButtonElement && activeEntryActionsMenu.menu.contains(duplicateButton)) {
+    const { sourcePath, sourceIndex } = activeEntryActionsMenu;
+    const triggerButton = activeEntryActionsMenu.button;
+    closeEntryActionsMenu();
+    await duplicateMonthlyEntry(sourcePath, sourceIndex, triggerButton);
+    return;
+  }
+
+  const deleteButton = target.closest("[data-entry-delete='true']");
+  if (deleteButton instanceof HTMLButtonElement && activeEntryActionsMenu.menu.contains(deleteButton)) {
+    const { sourcePath, sourceIndex } = activeEntryActionsMenu;
+    const triggerButton = activeEntryActionsMenu.button;
+    closeEntryActionsMenu();
+    await deleteMonthlyEntry(sourcePath, sourceIndex, triggerButton);
+    return;
+  }
+
+  if (
+    (activeEntryActionsMenu.button.contains(target) || activeEntryActionsMenu.menu.contains(target))
+  ) {
+    return;
+  }
+
+  closeEntryActionsMenu();
+}
+
+function handleEntryActionsKeyDown(event) {
+  if (event.key === "Escape") {
+    closeEntryActionsMenu();
+  }
+}
+
+function findMonthlyEntry(sourcePath, sourceIndex) {
+  const month = state.dashboard?.months?.[state.selectedMonthIndex];
+  if (!month) {
+    return null;
+  }
+
+  return month.allEntries.find(
+    (candidate) => candidate.sourcePath === sourcePath && candidate.sourceIndex === sourceIndex,
+  ) || null;
+}
+
+function openMonthlyEntryHistory(sourcePath, sourceIndex) {
+  const entry = findMonthlyEntry(sourcePath, sourceIndex);
+  if (entry) {
+    openEntryHistoryDialog(entry);
+  }
+}
+
+function getMonthlyEntryRowControls(sourcePath, sourceIndex, fallbackControl) {
+  const row = [...dom.monthlyEntriesTable.querySelectorAll("tr[data-entry-row='true']")]
+    .find(
+      (candidate) =>
+        candidate instanceof HTMLTableRowElement &&
+        candidate.dataset.entryPath === sourcePath &&
+        Number(candidate.dataset.entryIndex) === sourceIndex,
+    );
+
+  if (row instanceof HTMLTableRowElement) {
+    return [...row.querySelectorAll("input, select, button")];
+  }
+
+  return fallbackControl ? [fallbackControl] : [];
+}
+
+async function duplicateMonthlyEntry(sourcePath, sourceIndex, triggerControl) {
+  const entry = findMonthlyEntry(sourcePath, sourceIndex);
+  if (!entry) {
+    return;
+  }
+
+  const rowControls = getMonthlyEntryRowControls(sourcePath, sourceIndex, triggerControl);
+  rowControls.forEach((control) => {
+    control.disabled = true;
+  });
+
+  try {
+    await createEntry({
+      path: sourcePath,
+      entry: buildDuplicateEntryPayload(entry),
+      insertAfterIndex: sourceIndex,
+    });
+    state.signature = "";
+    await refreshDashboard({ force: true });
+  } catch (error) {
+    console.error(error);
+    renderDashboard();
+    window.alert(t("duplicate_entry_error"));
+  } finally {
+    rowControls.forEach((control) => {
+      control.disabled = false;
+    });
+  }
+}
+
+async function deleteMonthlyEntry(sourcePath, sourceIndex, triggerControl) {
+  const entry = findMonthlyEntry(sourcePath, sourceIndex);
   if (!entry) {
     return;
   }
@@ -3437,8 +3637,7 @@ async function handleMonthlyEntryActions(event) {
     return;
   }
 
-  const row = deleteButton.closest("tr");
-  const rowControls = row ? [...row.querySelectorAll("input, select, button")] : [deleteButton];
+  const rowControls = getMonthlyEntryRowControls(sourcePath, sourceIndex, triggerControl);
   rowControls.forEach((control) => {
     control.disabled = true;
   });
@@ -3459,6 +3658,65 @@ async function handleMonthlyEntryActions(event) {
       control.disabled = false;
     });
   }
+}
+
+async function handleMonthlyEntryActions(event) {
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    return;
+  }
+
+  const actionsButton = target.closest("[data-entry-actions-toggle='true']");
+  if (actionsButton instanceof HTMLButtonElement) {
+    closePrettySelect();
+    toggleEntryActionsMenu(actionsButton);
+    return;
+  }
+
+  const month = state.dashboard?.months?.[state.selectedMonthIndex];
+  if (!month) {
+    return;
+  }
+
+  const historyButton = target.closest("[data-entry-history='true']");
+  if (historyButton instanceof HTMLButtonElement) {
+    closeEntryActionsMenu();
+    const sourcePath = historyButton.dataset.entryPath;
+    const sourceIndex = Number(historyButton.dataset.entryIndex);
+    if (!sourcePath || !Number.isInteger(sourceIndex)) {
+      return;
+    }
+
+    openMonthlyEntryHistory(sourcePath, sourceIndex);
+    return;
+  }
+
+  const duplicateButton = target.closest("[data-entry-duplicate='true']");
+  if (duplicateButton instanceof HTMLButtonElement) {
+    closeEntryActionsMenu();
+    const sourcePath = duplicateButton.dataset.entryPath;
+    const sourceIndex = Number(duplicateButton.dataset.entryIndex);
+    if (!sourcePath || !Number.isInteger(sourceIndex)) {
+      return;
+    }
+
+    await duplicateMonthlyEntry(sourcePath, sourceIndex, duplicateButton);
+    return;
+  }
+
+  const deleteButton = target.closest("[data-entry-delete='true']");
+  if (!(deleteButton instanceof HTMLButtonElement)) {
+    return;
+  }
+
+  closeEntryActionsMenu();
+  const sourcePath = deleteButton.dataset.entryPath;
+  const sourceIndex = Number(deleteButton.dataset.entryIndex);
+  if (!sourcePath || !Number.isInteger(sourceIndex)) {
+    return;
+  }
+
+  await deleteMonthlyEntry(sourcePath, sourceIndex, deleteButton);
 }
 
 function openEntryHistoryDialog(entry) {
@@ -3623,16 +3881,21 @@ async function updateIncomeFields({ path, monthIndex, incomeIndex, updates }) {
   return response.json();
 }
 
-async function createEntry({ path, entry }) {
+async function createEntry({ path, entry, insertAfterIndex = null }) {
+  const body = {
+    path,
+    entry,
+  };
+  if (Number.isInteger(insertAfterIndex)) {
+    body.insert_after_index = insertAfterIndex;
+  }
+
   const response = await fetch("/api/entries/create", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      path,
-      entry,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {

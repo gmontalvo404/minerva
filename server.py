@@ -225,6 +225,16 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         target_type = entry_payload.get("type", target_path.stem)
         if target_type not in ALLOWED_TYPES:
             raise ValueError("Invalid target type")
+        insert_after_index = payload.get("insert_after_index")
+        has_insert_after_index = insert_after_index is not None
+        if has_insert_after_index:
+            insert_after_index = int(insert_after_index)
+            if insert_after_index < 0 or insert_after_index >= len(entries):
+                raise IndexError("Insert index out of range")
+            if is_unified_outcomes:
+                source_type = self._resolve_entry_type(entries[insert_after_index], target_path)
+                if source_type != target_type:
+                    raise ValueError("Cannot insert a movement after a different type")
 
         new_entry = self._normalize_new_entry(entry_payload)
         if is_unified_outcomes:
@@ -232,7 +242,11 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         self._ensure_entry_audit_fields(new_entry)
         new_entry["history"] = []
 
-        if is_unified_outcomes:
+        if has_insert_after_index:
+            insert_index = insert_after_index + 1
+            entries.insert(insert_index, new_entry)
+            created_index = insert_index
+        elif is_unified_outcomes:
             insert_index = self._find_unified_type_insert_index(entries, target_type)
             entries.insert(insert_index, new_entry)
             created_index = insert_index
