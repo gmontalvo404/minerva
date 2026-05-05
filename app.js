@@ -529,6 +529,7 @@ const TYPE_META = {
 };
 
 const TYPE_ORDER = ["needs", "wants", "savings", "debts"];
+const TYPE_DISPLAY_ORDER = ["savings", ...TYPE_ORDER.filter((typeKey) => typeKey !== "savings")];
 
 const dom = {
   heroChip: document.querySelector("#hero-chip"),
@@ -1615,6 +1616,8 @@ function renderAnnualTable(table, months) {
 
     return formatUsd(0);
   };
+  const getAnnualTypeAmount = (month, typeKey) =>
+    typeKey === "wants" ? month.displayTypes.wants : month.types[typeKey].total;
 
   const rows = [
     {
@@ -1635,30 +1638,12 @@ function renderAnnualTable(table, months) {
       metricClass: "annual-concept-chip--free",
       formatter: (month) => formatAnnualAmount(month, month.free),
     },
-    {
-      label: t("annual_table_needs"),
-      className: "annual-type-pill annual-type-pill--needs",
-      metricClass: "annual-concept-chip--needs",
-      formatter: (month) => formatAnnualAmount(month, month.types.needs.total),
-    },
-    {
-      label: t("annual_table_wants"),
-      className: "annual-type-pill annual-type-pill--wants",
-      metricClass: "annual-concept-chip--wants",
-      formatter: (month) => formatAnnualAmount(month, month.displayTypes.wants),
-    },
-    {
-      label: t("annual_table_savings"),
-      className: "annual-type-pill annual-type-pill--savings",
-      metricClass: "annual-concept-chip--savings",
-      formatter: (month) => formatAnnualAmount(month, month.types.savings.total),
-    },
-    {
-      label: t("annual_table_debts"),
-      className: "annual-type-pill annual-type-pill--debts",
-      metricClass: "annual-concept-chip--debts",
-      formatter: (month) => formatAnnualAmount(month, month.types.debts.total),
-    },
+    ...TYPE_DISPLAY_ORDER.map((typeKey) => ({
+      label: t(`annual_table_${typeKey}`),
+      className: `annual-type-pill annual-type-pill--${typeKey}`,
+      metricClass: `annual-concept-chip--${typeKey}`,
+      formatter: (month) => formatAnnualAmount(month, getAnnualTypeAmount(month, typeKey)),
+    })),
   ];
 
   table.innerHTML = `
@@ -1738,7 +1723,7 @@ function renderMonthlySummaryTable(table, month) {
       usdValue: month.incomeUsd,
       ratio: 100,
     },
-    ...TYPE_ORDER.map((typeKey) => ({
+    ...TYPE_DISPLAY_ORDER.map((typeKey) => ({
       label: getTypeLabel(typeKey),
       value: month.displayTypes[typeKey],
       usdValue: month.usdCop > 0 ? normalizeUsd(month.displayTypes[typeKey] / month.usdCop) : 0,
@@ -4094,7 +4079,7 @@ function compareYearKeys(left, right) {
 }
 
 function buildSegmentsFromTotals(typeTotals) {
-  return TYPE_ORDER.map((typeKey) => ({
+  return TYPE_DISPLAY_ORDER.map((typeKey) => ({
     typeKey,
     value: typeTotals[typeKey],
     color: TYPE_META[typeKey].color,
@@ -4116,7 +4101,7 @@ function buildMonthlyDisplayTypes(typeTotals, free) {
 
 function buildMonthlySegments(displayTypes, free) {
   const segments = buildSegmentsFromTotals(
-    TYPE_ORDER.reduce((accumulator, typeKey) => {
+    TYPE_DISPLAY_ORDER.reduce((accumulator, typeKey) => {
       accumulator[typeKey] = displayTypes[typeKey];
       return accumulator;
     }, {}),
@@ -4161,7 +4146,7 @@ function normalizeOutcomeType(value) {
 }
 
 function compareEntries(left, right) {
-  const typeDelta = TYPE_ORDER.indexOf(left.typeKey) - TYPE_ORDER.indexOf(right.typeKey);
+  const typeDelta = TYPE_DISPLAY_ORDER.indexOf(left.typeKey) - TYPE_DISPLAY_ORDER.indexOf(right.typeKey);
   if (typeDelta !== 0) {
     return typeDelta;
   }
