@@ -1,6 +1,6 @@
 # Minerva
 
-Minerva is a local personal finance cash flow dashboard. It reads JSON data from `finance/data`, calculates annual and monthly summaries, and lets you edit incomes and expenses from a web interface without a database or required external services.
+Minerva is a local personal finance dashboard. It reads JSON data from `finance/data/cash_flow` and `finance/data/debts`, calculates annual and monthly summaries, and lets you edit incomes, expenses, and debts from a web interface without a database or required external services.
 
 The app is designed for budgeting in COP and USD, reviewing expense distribution, switching between annual and monthly views, and keeping a simple change history for each movement.
 
@@ -33,7 +33,7 @@ Dark mode with demo data:
 
 - Frontend: HTML, CSS, and JavaScript without a framework.
 - Local backend: Python `http.server` with custom JSON endpoints.
-- Persistence: JSON files inside `finance/data`.
+- Persistence: JSON files inside `finance/data/cash_flow` and `finance/data/debts`.
 - Build: no build step and no npm dependencies.
 
 ## Structure
@@ -50,9 +50,12 @@ Dark mode with demo data:
     |   +-- currencies.json
     |   `-- types.json
     `-- data
-        +-- demo
-        +-- 2026
-        `-- 2027
+        +-- cash_flow
+        |   +-- demo
+        |   +-- 2026
+        |   `-- 2027
+        `-- debts
+            `-- debts.json
 ```
 
 Main files:
@@ -62,7 +65,8 @@ Main files:
 - `app.js`: data loading, calculations, rendering, interactions, and backend calls.
 - `server.py`: local server, write endpoints, and USD/COP rate proxy.
 - `finance/shared`: shared category, type, and currency catalogs.
-- `finance/data`: financial data by year or dataset.
+- `finance/data/cash_flow`: cash flow data by year or dataset.
+- `finance/data/debts`: debt data.
 
 ## Requirements
 
@@ -90,14 +94,14 @@ You can also open `index.html` directly, but the app needs to be served over HTT
 
 ## Data
 
-The app automatically discovers folders inside `finance/data`. Each folder can represent a year, such as `2026`, `2027`, or a dataset such as `demo`.
+The app automatically discovers folders inside `finance/data/cash_flow`. Each folder can represent a year, such as `2026`, `2027`, or a dataset such as `demo`.
 
 ### Incomes
 
 Incomes live in:
 
 ```text
-finance/data/<year>/incomes/incomes.json
+finance/data/cash_flow/<year>/incomes/incomes.json
 ```
 
 Expected format:
@@ -137,7 +141,7 @@ The recommended format is one unified file per month.
 Unified monthly format:
 
 ```text
-finance/data/<year>/outcomes/01-january.json
+finance/data/cash_flow/<year>/outcomes/01-january.json
 ```
 
 ```json
@@ -160,10 +164,10 @@ finance/data/<year>/outcomes/01-january.json
 The app can still read the legacy format separated by type, but new data should use the unified monthly format:
 
 ```text
-finance/data/<year>/outcomes/01-january/needs.json
-finance/data/<year>/outcomes/01-january/wants.json
-finance/data/<year>/outcomes/01-january/savings.json
-finance/data/<year>/outcomes/01-january/debts.json
+finance/data/cash_flow/<year>/outcomes/01-january/needs.json
+finance/data/cash_flow/<year>/outcomes/01-january/wants.json
+finance/data/cash_flow/<year>/outcomes/01-january/savings.json
+finance/data/cash_flow/<year>/outcomes/01-january/debts.json
 ```
 
 ```json
@@ -189,25 +193,35 @@ Valid types:
 - `savings`
 - `debts`
 
+### Debts
+
+Debts live in:
+
+```text
+finance/data/debts/debts.json
+```
+
+The debts view edits this file through `POST /api/debts/update`.
+
 ## Create a New Year
 
-1. Create a folder in `finance/data`, for example:
+1. Create a folder in `finance/data/cash_flow`, for example:
 
    ```text
-   finance/data/2028
+   finance/data/cash_flow/2028
    ```
 
 2. Add incomes:
 
    ```text
-   finance/data/2028/incomes/incomes.json
+   finance/data/cash_flow/2028/incomes/incomes.json
    ```
 
 3. Add expenses using either the unified format or the format separated by type.
 
 4. Restart or refresh the app. The new year will appear in the selector if the folder is available from the local server.
 
-You can use `finance/data/demo` as a reference dataset.
+You can use `finance/data/cash_flow/demo` as a reference dataset.
 
 ## Local Endpoints
 
@@ -223,6 +237,7 @@ The server exposes endpoints used by `app.js`:
 - `POST /api/incomes/update`: updates an income.
 - `POST /api/incomes/delete`: deletes an income.
 - `POST /api/incomes/reorder`: reorders incomes.
+- `POST /api/debts/update`: updates a debt.
 
 The app still accepts the legacy `active` flag when reading old data or payloads, but current JSON should use `paid` for expenses and `received` for incomes.
 
@@ -230,7 +245,7 @@ For safety, `server.py` only allows writes to `.json` files inside `finance/data
 
 ## Privacy
 
-Financial data is stored in local files. The current `.gitignore` excludes `finance/data/*` and keeps only the `finance/data/demo` dataset as publishable sample data.
+Financial data is stored in local files. The current `.gitignore` excludes personal data under `finance/data` and keeps only the `finance/data/cash_flow/demo` dataset as publishable sample data.
 
 Before sharing the project, verify that you are not including real financial information in the JSON files.
 
