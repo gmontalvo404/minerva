@@ -21,7 +21,7 @@ const AVAILABLE_THEMES = new Set(["light", "dark"]);
 const AVAILABLE_LANGUAGES = new Set(["es", "en"]);
 const AVAILABLE_APP_MODES = new Set(["cashflow", "debts", "credit", "nutrition"]);
 const AVAILABLE_DEBT_VIEWS = new Set(["active", "canceled"]);
-const NUTRITION_TABS = ["rules", "breakfast", "lunch", "dinner", "snack", "plan"];
+const NUTRITION_TABS = ["rules", "plan", "ingredients", "breakfast", "lunch", "dinner", "snack"];
 const NUTRITION_MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"];
 let nutritionSaveTimer = 0;
 let nutritionMealDraft = null; // { type, id: string|null, name, description, items: [{ingredient, qty}] }
@@ -168,6 +168,16 @@ const I18N = {
     nutrition_plan_day_total: "Total día",
     nutrition_random_week: "Randomizar semana",
     nutrition_random_day: "Randomizar este día",
+    nutrition_tab_ingredients: "Ingredientes",
+    nutrition_ingredients_add: "Nuevo ingrediente",
+    nutrition_ing_name: "Ingrediente",
+    nutrition_ing_category: "Categoría",
+    nutrition_ing_unit: "Unidad",
+    nutrition_ing_price: "Precio unit.",
+    nutrition_ing_store: "Dónde comprar",
+    nutrition_ingredient_delete_confirm: "¿Eliminar «{name}»? Se quitará de las comidas que lo usan.",
+    nutrition_exclude_title: "Excluir ingredientes",
+    nutrition_exclude_hint: "Marca los que no quieres: no se listarán comidas que los contengan (tampoco en el random).",
     nutrition_loading: "Cargando plan...",
     view_label: "Vista",
     view_annual: "Resumen anual",
@@ -559,6 +569,16 @@ const I18N = {
     nutrition_plan_day_total: "Day total",
     nutrition_random_week: "Randomize week",
     nutrition_random_day: "Randomize this day",
+    nutrition_tab_ingredients: "Ingredients",
+    nutrition_ingredients_add: "New ingredient",
+    nutrition_ing_name: "Ingredient",
+    nutrition_ing_category: "Category",
+    nutrition_ing_unit: "Unit",
+    nutrition_ing_price: "Unit price",
+    nutrition_ing_store: "Where to buy",
+    nutrition_ingredient_delete_confirm: "Delete “{name}”? It will be removed from meals that use it.",
+    nutrition_exclude_title: "Exclude ingredients",
+    nutrition_exclude_hint: "Check the ones you don't want: meals containing them won't be listed (or randomized).",
     nutrition_loading: "Loading plan...",
     view_label: "View",
     view_annual: "Annual summary",
@@ -2888,6 +2908,8 @@ function renderNutritionPanel() {
     body = renderNutritionRules(plan);
   } else if (activeTab === "plan") {
     body = renderNutritionWeeklyPlan(plan);
+  } else if (activeTab === "ingredients") {
+    body = renderNutritionIngredients(plan);
   } else {
     body = renderNutritionCatalog(plan, activeTab);
   }
@@ -3133,8 +3155,100 @@ function computeNutritionShoppingList(plan, ingMap) {
   return { lines, total };
 }
 
+function renderNutritionExcludeControl(plan, excludedSet) {
+  const ingredients = (plan.ingredients || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+  const chips = ingredients
+    .map(
+      (ing) => `
+      <label class="nutrition-exclude-chip${excludedSet.has(ing.id) ? " is-excluded" : ""}">
+        <input type="checkbox" data-nutrition-exclude data-ingredient-id="${escapeHtml(ing.id)}" ${excludedSet.has(ing.id) ? "checked" : ""} />
+        <span>${escapeHtml(ing.name)}</span>
+      </label>
+    `,
+    )
+    .join("");
+  return `
+    <article class="card nutrition-card nutrition-exclude-card">
+      <div class="card__head"><div>
+        <h3>${escapeHtml(t("nutrition_exclude_title"))}</h3>
+        <p class="card__eyebrow">${escapeHtml(t("nutrition_exclude_hint"))}</p>
+      </div></div>
+      <div class="nutrition-exclude-grid">${chips}</div>
+    </article>
+  `;
+}
+
+function renderNutritionIngredients(plan) {
+  const ingredients = plan.ingredients || [];
+  const rows = ingredients
+    .map(
+      (ing) => `
+      <tr>
+        <td><input type="text" class="entry-input" data-ing-field="name" data-ing-id="${escapeHtml(ing.id)}" value="${escapeHtml(ing.name || "")}" /></td>
+        <td><input type="text" class="entry-input" data-ing-field="category" data-ing-id="${escapeHtml(ing.id)}" value="${escapeHtml(ing.category || "")}" /></td>
+        <td><input type="text" class="entry-input nutrition-unit-input" data-ing-field="unit" data-ing-id="${escapeHtml(ing.id)}" value="${escapeHtml(ing.unit || "")}" /></td>
+        <td><input type="number" min="0" step="1" class="entry-input" data-ing-field="price_per_unit" data-ing-id="${escapeHtml(ing.id)}" value="${escapeHtml(String(ing.price_per_unit ?? 0))}" /></td>
+        <td><input type="text" class="entry-input" data-ing-field="store" data-ing-id="${escapeHtml(ing.id)}" value="${escapeHtml(ing.store || "")}" /></td>
+        <td class="nutrition-ing-actions">
+          <button type="button" class="nutrition-link-button nutrition-link-button--danger" data-nutrition-delete-ingredient="${escapeHtml(ing.id)}">${escapeHtml(t("nutrition_meal_delete"))}</button>
+        </td>
+      </tr>
+    `,
+    )
+    .join("");
+  return `
+    <article class="card nutrition-card">
+      <div class="card__head nutrition-catalog__head">
+        <div>
+          <h3>${escapeHtml(t("nutrition_tab_ingredients"))}</h3>
+          <p class="card__eyebrow">${escapeHtml(t("nutrition_catalog_count", { count: ingredients.length }))}</p>
+        </div>
+        <button type="button" class="button button--compact nutrition-random-btn" data-nutrition-add-ingredient-row="true">${escapeHtml(t("nutrition_ingredients_add"))}</button>
+      </div>
+      <div class="nutrition-table-fit">
+        <table class="data-table data-table--nutrition data-table--nutrition-ingredients">
+          <thead>
+            <tr>
+              <th>${escapeHtml(t("nutrition_ing_name"))}</th>
+              <th>${escapeHtml(t("nutrition_ing_category"))}</th>
+              <th>${escapeHtml(t("nutrition_ing_unit"))}</th>
+              <th>${escapeHtml(t("nutrition_ing_price"))}</th>
+              <th>${escapeHtml(t("nutrition_ing_store"))}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </article>
+  `;
+}
+
+function nutritionNewIngredientId(plan) {
+  const existing = new Set((plan.ingredients || []).map((ing) => ing.id));
+  let n = 1;
+  let id = `ing_${n}`;
+  while (existing.has(id)) {
+    n += 1;
+    id = `ing_${n}`;
+  }
+  return id;
+}
+
+function nutritionExcludedSet(plan) {
+  return new Set(plan.excluded_ingredients || []);
+}
+
+function mealUsesExcluded(meal, excludedSet) {
+  return !!meal && Array.isArray(meal.items) && meal.items.some((item) => excludedSet.has(item.ingredient));
+}
+
+function nutritionAvailableMeals(plan, type, excludedSet) {
+  return (plan.meals?.[type] || []).filter((meal) => !mealUsesExcluded(meal, excludedSet));
+}
+
 function randomNutritionMealId(plan, type) {
-  const meals = plan.meals?.[type] || [];
+  const meals = nutritionAvailableMeals(plan, type, nutritionExcludedSet(plan));
   if (!meals.length) {
     return null;
   }
@@ -3153,6 +3267,7 @@ function randomizeNutritionDay(plan, dayIndex) {
 
 function renderNutritionWeeklyPlan(plan) {
   const ingMap = nutritionIngredientMap(plan);
+  const excludedSet = nutritionExcludedSet(plan);
   const week = Array.isArray(plan.week) ? plan.week : [];
 
   const costCache = new Map();
@@ -3188,7 +3303,13 @@ function renderNutritionWeeklyPlan(plan) {
   ];
 
   const mealOptions = (type, selectedId) => {
-    const meals = plan.meals?.[type] || [];
+    let meals = nutritionAvailableMeals(plan, type, excludedSet);
+    if (selectedId && !meals.some((meal) => meal.id === selectedId)) {
+      const current = findNutritionMeal(plan, type, selectedId);
+      if (current) {
+        meals = [current, ...meals];
+      }
+    }
     return (
       `<option value="">${escapeHtml(t("nutrition_none_option"))}</option>` +
       meals
@@ -3263,10 +3384,12 @@ function renderNutritionWeeklyPlan(plan) {
       </div>
     </section>
 
+    ${renderNutritionExcludeControl(plan, excludedSet)}
+
     <article class="card nutrition-card">
       <div class="card__head nutrition-catalog__head">
         <div><h3>${escapeHtml(t("nutrition_plan_table_title"))}</h3></div>
-        <button type="button" class="button button--compact" data-nutrition-random-week="true">🎲 ${escapeHtml(t("nutrition_random_week"))}</button>
+        <button type="button" class="button button--compact nutrition-random-btn" data-nutrition-random-week="true">🎲 ${escapeHtml(t("nutrition_random_week"))}</button>
       </div>
       <div class="nutrition-table-fit">
         <table class="data-table data-table--nutrition data-table--nutrition-plan">
@@ -3323,7 +3446,7 @@ function handleNutritionClick(event) {
     return;
   }
   const target = event.target.closest(
-    "[data-nutrition-add-meal],[data-nutrition-edit-meal],[data-nutrition-delete-meal],[data-nutrition-add-item],[data-nutrition-remove-item],[data-nutrition-save-meal],[data-nutrition-cancel-meal],[data-nutrition-random-week],[data-nutrition-random-day]",
+    "[data-nutrition-add-meal],[data-nutrition-edit-meal],[data-nutrition-delete-meal],[data-nutrition-add-item],[data-nutrition-remove-item],[data-nutrition-save-meal],[data-nutrition-cancel-meal],[data-nutrition-random-week],[data-nutrition-random-day],[data-nutrition-delete-ingredient],[data-nutrition-add-ingredient-row]",
   );
   if (!target) {
     return;
@@ -3337,6 +3460,37 @@ function handleNutritionClick(event) {
   }
   if (target.hasAttribute("data-nutrition-random-day")) {
     randomizeNutritionDay(plan, Number(target.dataset.nutritionRandomDay));
+    scheduleNutritionSave();
+    renderNutritionPanel();
+    return;
+  }
+  if (target.hasAttribute("data-nutrition-add-ingredient-row")) {
+    if (!Array.isArray(plan.ingredients)) {
+      plan.ingredients = [];
+    }
+    plan.ingredients.push({ id: nutritionNewIngredientId(plan), name: "", unit: "unidad", price_per_unit: 0, category: "", store: "" });
+    scheduleNutritionSave();
+    renderNutritionPanel();
+    return;
+  }
+  if (target.hasAttribute("data-nutrition-delete-ingredient")) {
+    const id = target.dataset.nutritionDeleteIngredient;
+    const ing = (plan.ingredients || []).find((item) => item.id === id);
+    if (!ing) {
+      return;
+    }
+    if (!window.confirm(t("nutrition_ingredient_delete_confirm", { name: ing.name || id }))) {
+      return;
+    }
+    plan.ingredients = (plan.ingredients || []).filter((item) => item.id !== id);
+    Object.values(plan.meals || {}).forEach((meals) =>
+      (meals || []).forEach((meal) => {
+        if (Array.isArray(meal.items)) {
+          meal.items = meal.items.filter((item) => item.ingredient !== id);
+        }
+      }),
+    );
+    plan.excluded_ingredients = (plan.excluded_ingredients || []).filter((item) => item !== id);
     scheduleNutritionSave();
     renderNutritionPanel();
     return;
@@ -3435,6 +3589,20 @@ function handleNutritionChange(event) {
     }
     return;
   }
+  if (target.hasAttribute("data-nutrition-exclude")) {
+    const id = target.dataset.ingredientId;
+    const list = plan.excluded_ingredients || (plan.excluded_ingredients = []);
+    if (target.checked) {
+      if (!list.includes(id)) {
+        list.push(id);
+      }
+    } else {
+      plan.excluded_ingredients = list.filter((item) => item !== id);
+    }
+    scheduleNutritionSave();
+    renderNutritionPanel();
+    return;
+  }
   if (target.hasAttribute("data-nutrition-draft-ingredient")) {
     if (nutritionMealDraft) {
       const index = Number(target.dataset.itemIndex);
@@ -3447,6 +3615,20 @@ function handleNutritionChange(event) {
 
 function handleNutritionInput(event) {
   const target = event.target;
+  if (target.hasAttribute("data-ing-field")) {
+    const plan = state.nutritionPlan;
+    const ing = plan && (plan.ingredients || []).find((item) => item.id === target.dataset.ingId);
+    if (ing) {
+      const field = target.dataset.ingField;
+      if (field === "price_per_unit") {
+        ing.price_per_unit = Math.max(0, Number(target.value) || 0);
+      } else {
+        ing[field] = target.value;
+      }
+      scheduleNutritionSave();
+    }
+    return;
+  }
   if (target.hasAttribute("data-nutrition-draft-name")) {
     if (nutritionMealDraft) {
       nutritionMealDraft.name = target.value;
