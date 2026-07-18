@@ -21,6 +21,10 @@ const AVAILABLE_THEMES = new Set(["light", "dark"]);
 const AVAILABLE_LANGUAGES = new Set(["es", "en"]);
 const AVAILABLE_APP_MODES = new Set(["cashflow", "debts", "credit", "nutrition"]);
 const AVAILABLE_DEBT_VIEWS = new Set(["active", "canceled"]);
+const NUTRITION_TABS = ["rules", "breakfast", "lunch", "dinner", "snack", "plan"];
+const NUTRITION_MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"];
+let nutritionSaveTimer = 0;
+let nutritionMealDraft = null; // { type, id: string|null, name, description, items: [{ingredient, qty}] }
 
 const DEFAULT_CREDIT_SIMULATION = {
   capital: 20_000_000,
@@ -2844,12 +2848,6 @@ async function loadNutritionPlan() {
   }
   return state.nutritionPlan;
 }
-
-const NUTRITION_TABS = ["rules", "breakfast", "lunch", "dinner", "snack", "plan"];
-const NUTRITION_MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"];
-
-let nutritionSaveTimer = 0;
-let nutritionMealDraft = null; // { type, id: string|null, name, description, items: [{ingredient, qty}] }
 
 function renderNutritionPanel() {
   if (!dom.nutritionContent) {
