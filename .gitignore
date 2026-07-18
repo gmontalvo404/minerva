@@ -4,5 +4,7 @@ scripts/
 
 # Keep personal finance data local. The demo dataset is safe to publish.
 /finance/data/*
-!/finance/data/demo/
-!/finance/data/demo/**
+!/finance/data/cash_flow/
+/finance/data/cash_flow/*
+!/finance/data/cash_flow/demo/
+!/finance/data/cash_flow/demo/**
