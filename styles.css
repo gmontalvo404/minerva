@@ -2,7 +2,7 @@
   color-scheme: light;
   --bg: #f4efe7;
   --bg-accent: #ece3d5;
-  --panel: rgba(255, 255, 255, 0.82);
+  --panel: rgba(255, 255, 255, 0.97);
   --panel-strong: #ffffff;
   --line: rgba(17, 24, 39, 0.12);
   --line-strong: rgba(17, 24, 39, 0.2);
@@ -43,7 +43,7 @@
   color-scheme: dark;
   --bg: #15202b;
   --bg-accent: #192734;
-  --panel: rgba(25, 39, 52, 0.82);
+  --panel: rgba(25, 39, 52, 0.97);
   --panel-strong: #1e2732;
   --line: rgba(136, 153, 166, 0.24);
   --line-strong: rgba(136, 153, 166, 0.38);
@@ -1088,7 +1088,6 @@ code {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
-  backdrop-filter: blur(12px);
   box-shadow: var(--paper-shadow);
 }
 
