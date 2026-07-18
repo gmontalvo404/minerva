@@ -238,6 +238,7 @@ The server exposes endpoints used by `app.js`:
 - `POST /api/incomes/delete`: deletes an income.
 - `POST /api/incomes/reorder`: reorders incomes.
 - `POST /api/debts/update`: updates a debt.
+- `POST /api/nutrition/save`: saves the whole meal plan document to `finance/data/nutrition/plan.json`.
 
 The app still accepts the legacy `active` flag when reading old data or payloads, but current JSON should use `paid` for expenses and `received` for incomes.
 

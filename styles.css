@@ -4337,3 +4337,294 @@ code {
 [data-theme="dark"] .data-table--nutrition td {
   border-bottom-color: rgba(255, 255, 255, 0.08);
 }
+
+/* ===== Meal plan (nutrition) redesign: tabs, catalog, weekly plan ===== */
+.nutrition-tabs {
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.nutrition-tab-body {
+  display: grid;
+  gap: 18px;
+}
+
+.nutrition-catalog__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.nutrition-empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 4px 0 0;
+}
+
+.nutrition-meal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.nutrition-meal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel-strong);
+}
+
+.nutrition-meal__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.nutrition-meal__name {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 800;
+}
+
+.nutrition-meal__cost {
+  font-weight: 800;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.nutrition-meal__desc {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.nutrition-meal__items {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 2px;
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.nutrition-meal__actions {
+  display: flex;
+  gap: 14px;
+  margin-top: auto;
+  padding-top: 6px;
+}
+
+.nutrition-link-button {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.nutrition-link-button:hover {
+  text-decoration: underline;
+}
+
+.nutrition-link-button--danger {
+  color: #d1495b;
+}
+
+.nutrition-meal--editor {
+  grid-column: 1 / -1;
+  gap: 14px;
+  border-color: var(--accent);
+}
+
+.nutrition-field {
+  display: grid;
+  gap: 6px;
+}
+
+.nutrition-textarea {
+  resize: vertical;
+  min-height: 48px;
+  font: inherit;
+}
+
+.nutrition-draft-items {
+  display: grid;
+  gap: 8px;
+}
+
+.nutrition-draft-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.nutrition-select {
+  appearance: none;
+  width: 100%;
+  min-height: 42px;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-strong);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.nutrition-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.nutrition-qty-input {
+  width: 100%;
+  text-align: right;
+}
+
+.nutrition-summary .card__head {
+  margin-bottom: 10px;
+}
+
+.nutrition-kpi-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.data-table--nutrition-plan th,
+.data-table--nutrition-plan td {
+  vertical-align: middle;
+}
+
+.nutrition-plan-cell {
+  min-width: 0;
+}
+
+.nutrition-plan-select {
+  min-height: 40px;
+  width: 100%;
+  min-width: 0;
+}
+
+.nutrition-plan-total {
+  text-align: right;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.nutrition-price-cell {
+  width: 120px;
+}
+
+.nutrition-price-input {
+  width: 100%;
+  text-align: right;
+}
+
+.nutrition-shopping-total {
+  font-weight: 800;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .nutrition-meal,
+[data-theme="dark"] .nutrition-select {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .nutrition-link-button--danger {
+  color: #f2808f;
+}
+
+/* Weekly plan + shopping list: fit without horizontal scroll */
+.nutrition-table-fit {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+.data-table--nutrition-plan,
+.data-table--nutrition-shopping {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.data-table--nutrition-plan th,
+.data-table--nutrition-plan td,
+.data-table--nutrition-shopping th,
+.data-table--nutrition-shopping td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.data-table--nutrition-plan th:first-child,
+.data-table--nutrition-plan td:first-child {
+  width: 16%;
+}
+
+.data-table--nutrition-plan th:last-child,
+.data-table--nutrition-plan td:last-child {
+  width: 12%;
+}
+
+.data-table--nutrition-shopping th:first-child,
+.data-table--nutrition-shopping td:first-child {
+  width: 40%;
+}
+
+.nutrition-day-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.nutrition-day-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nutrition-dice {
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.nutrition-dice:hover {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.nutrition-price-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nutrition-price-field .nutrition-price-input {
+  min-width: 0;
+  flex: 1;
+}
+
+.nutrition-price-unit {
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}

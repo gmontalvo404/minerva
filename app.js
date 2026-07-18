@@ -82,7 +82,7 @@ const CATEGORY_LABELS = {
 
 const I18N = {
   es: {
-    document_title: "Panel de flujo de caja {year}",
+    document_title: "Minerva",
     hero_chip: "Vista {year}",
     hero_title: "Panel de flujo de caja",
     hero_lede: "Resumen anual y vista mes a mes conectados directamente a la carpeta de finance/data/cash_flow.",
@@ -110,29 +110,58 @@ const I18N = {
     app_section_nutrition: "Plan alimentario",
     nutrition_section_eyebrow: "Nutrición",
     nutrition_title: "Plan alimentario",
-    nutrition_note: "Plan de 14 días con horarios, porciones, prep dominical y lista de mercado.",
+    nutrition_note: "Arma tu semana desde tu catálogo de comidas y controla gastos, ingredientes y lista de compras.",
+    nutrition_tab_rules: "Ground rules",
+    nutrition_tab_breakfast: "Desayunos",
+    nutrition_tab_lunch: "Almuerzos",
+    nutrition_tab_dinner: "Cenas",
+    nutrition_tab_snack: "Snacks",
+    nutrition_tab_plan: "Plan semanal",
     nutrition_rules_title: "Reglas fijas",
     nutrition_rules_col_rule: "Regla",
     nutrition_rules_col_value: "Definición",
-    nutrition_week_title: "Semana {week}",
+    nutrition_condiments_title: "Condimentos",
+    nutrition_condiments_yes: "Sí puedes usar",
+    nutrition_condiments_no: "Evita",
     nutrition_col_day: "Día",
     nutrition_col_breakfast: "Desayuno",
     nutrition_col_lunch: "Almuerzo",
     nutrition_col_snack: "Snack",
     nutrition_col_dinner: "Cena",
-    nutrition_col_carbs: "Harinas del día",
-    nutrition_carbs_title: "Harinas por día",
-    nutrition_prep_title: "Preparación del domingo",
-    nutrition_prep_week: "Domingo para Semana {week}",
-    nutrition_prep_col_item: "Preparación",
-    nutrition_prep_col_amount: "Cantidad",
-    nutrition_prep_col_how: "Cómo dejarlo listo",
-    nutrition_market_title: "Lista de mercado (2 semanas)",
-    nutrition_market_col_category: "Categoría",
-    nutrition_market_col_amount: "Cantidad aproximada",
-    nutrition_condiments_title: "Condimentos",
-    nutrition_condiments_yes: "Sí puedes usar",
-    nutrition_condiments_no: "Evita",
+    nutrition_catalog_add: "Agregar comida",
+    nutrition_catalog_empty: "Aún no hay comidas en este catálogo.",
+    nutrition_catalog_count: "{count} comidas",
+    nutrition_meal_cost: "Costo estimado",
+    nutrition_meal_ingredients: "Ingredientes",
+    nutrition_meal_edit: "Editar",
+    nutrition_meal_delete: "Eliminar",
+    nutrition_meal_delete_confirm: "¿Eliminar «{name}»? Se quitará también de los días del plan.",
+    nutrition_meal_save: "Guardar",
+    nutrition_meal_cancel: "Cancelar",
+    nutrition_meal_name: "Nombre",
+    nutrition_meal_desc: "Descripción",
+    nutrition_meal_add_ingredient: "Agregar ingrediente",
+    nutrition_meal_qty: "Cantidad",
+    nutrition_meal_new: "Nueva comida",
+    nutrition_meal_no_items: "Sin ingredientes todavía.",
+    nutrition_none_option: "— Sin asignar —",
+    nutrition_plan_summary_title: "Resumen de la semana",
+    nutrition_kpi_weekly_cost: "Gasto semanal",
+    nutrition_kpi_daily_avg: "Promedio por día",
+    nutrition_kpi_meals: "Comidas asignadas",
+    nutrition_kpi_ingredients: "Ingredientes distintos",
+    nutrition_shopping_title: "Lista de compras",
+    nutrition_shopping_col_ingredient: "Ingrediente",
+    nutrition_shopping_col_qty: "Cantidad",
+    nutrition_shopping_col_price: "Precio unit.",
+    nutrition_shopping_col_total: "Subtotal",
+    nutrition_shopping_total: "Total estimado",
+    nutrition_shopping_hint: "Edita el precio unitario para ajustar el estimado.",
+    nutrition_shopping_empty: "Asigna comidas al plan para ver la lista de compras.",
+    nutrition_plan_table_title: "Plan de la semana",
+    nutrition_plan_day_total: "Total día",
+    nutrition_random_week: "Randomizar semana",
+    nutrition_random_day: "Randomizar este día",
     nutrition_loading: "Cargando plan...",
     view_label: "Vista",
     view_annual: "Resumen anual",
@@ -442,7 +471,7 @@ const I18N = {
       "Abre el proyecto con `python3 server.py` y luego entra por `http://localhost:8123/`.",
   },
   en: {
-    document_title: "Cash Flow Dashboard {year}",
+    document_title: "Minerva",
     hero_chip: "{year} overview",
     hero_title: "Cash flow dashboard",
     hero_lede: "Annual summary and month-by-month view connected directly to finance/data/cash_flow.",
@@ -470,29 +499,58 @@ const I18N = {
     app_section_nutrition: "Meal plan",
     nutrition_section_eyebrow: "Nutrition",
     nutrition_title: "Meal plan",
-    nutrition_note: "14-day plan with schedule, portions, Sunday prep, and shopping list.",
+    nutrition_note: "Build your week from your meal catalog and track spending, ingredients, and the shopping list.",
+    nutrition_tab_rules: "Ground rules",
+    nutrition_tab_breakfast: "Breakfasts",
+    nutrition_tab_lunch: "Lunches",
+    nutrition_tab_dinner: "Dinners",
+    nutrition_tab_snack: "Snacks",
+    nutrition_tab_plan: "Weekly plan",
     nutrition_rules_title: "Ground rules",
     nutrition_rules_col_rule: "Rule",
     nutrition_rules_col_value: "Definition",
-    nutrition_week_title: "Week {week}",
+    nutrition_condiments_title: "Seasonings",
+    nutrition_condiments_yes: "Allowed",
+    nutrition_condiments_no: "Avoid",
     nutrition_col_day: "Day",
     nutrition_col_breakfast: "Breakfast",
     nutrition_col_lunch: "Lunch",
     nutrition_col_snack: "Snack",
     nutrition_col_dinner: "Dinner",
-    nutrition_col_carbs: "Daily carbs",
-    nutrition_carbs_title: "Daily carbs by day",
-    nutrition_prep_title: "Sunday prep",
-    nutrition_prep_week: "Sunday prep for Week {week}",
-    nutrition_prep_col_item: "Item",
-    nutrition_prep_col_amount: "Amount",
-    nutrition_prep_col_how: "How to prep",
-    nutrition_market_title: "Shopping list (2 weeks)",
-    nutrition_market_col_category: "Category",
-    nutrition_market_col_amount: "Approx. amount",
-    nutrition_condiments_title: "Seasonings",
-    nutrition_condiments_yes: "Allowed",
-    nutrition_condiments_no: "Avoid",
+    nutrition_catalog_add: "Add meal",
+    nutrition_catalog_empty: "No meals in this catalog yet.",
+    nutrition_catalog_count: "{count} meals",
+    nutrition_meal_cost: "Estimated cost",
+    nutrition_meal_ingredients: "Ingredients",
+    nutrition_meal_edit: "Edit",
+    nutrition_meal_delete: "Delete",
+    nutrition_meal_delete_confirm: "Delete “{name}”? It will also be removed from the plan days.",
+    nutrition_meal_save: "Save",
+    nutrition_meal_cancel: "Cancel",
+    nutrition_meal_name: "Name",
+    nutrition_meal_desc: "Description",
+    nutrition_meal_add_ingredient: "Add ingredient",
+    nutrition_meal_qty: "Quantity",
+    nutrition_meal_new: "New meal",
+    nutrition_meal_no_items: "No ingredients yet.",
+    nutrition_none_option: "— Unassigned —",
+    nutrition_plan_summary_title: "Week summary",
+    nutrition_kpi_weekly_cost: "Weekly spend",
+    nutrition_kpi_daily_avg: "Daily average",
+    nutrition_kpi_meals: "Assigned meals",
+    nutrition_kpi_ingredients: "Distinct ingredients",
+    nutrition_shopping_title: "Shopping list",
+    nutrition_shopping_col_ingredient: "Ingredient",
+    nutrition_shopping_col_qty: "Quantity",
+    nutrition_shopping_col_price: "Unit price",
+    nutrition_shopping_col_total: "Subtotal",
+    nutrition_shopping_total: "Estimated total",
+    nutrition_shopping_hint: "Edit the unit price to adjust the estimate.",
+    nutrition_shopping_empty: "Assign meals to the plan to see the shopping list.",
+    nutrition_plan_table_title: "The week's plan",
+    nutrition_plan_day_total: "Day total",
+    nutrition_random_week: "Randomize week",
+    nutrition_random_day: "Randomize this day",
     nutrition_loading: "Loading plan...",
     view_label: "View",
     view_annual: "Annual summary",
@@ -923,6 +981,8 @@ const dom = {
   debtViewControls: document.querySelector("#debt-view-controls"),
   debtViewButtons: [...document.querySelectorAll("[data-debt-view]")],
   creditViewControls: document.querySelector("#credit-view-controls"),
+  nutritionViewControls: document.querySelector("#nutrition-view-controls"),
+  nutritionTabButtons: [...document.querySelectorAll("#nutrition-view-controls [data-nutrition-tab]")],
   viewModeButtons: [...document.querySelectorAll("[data-view-mode]")],
   categorySortButtons: [...document.querySelectorAll("[data-category-sort]")],
   addEntryButton: document.querySelector("#add-entry-button"),
@@ -1205,6 +1265,18 @@ function init() {
         persistDebtView(state.debtView);
         renderDebtSection();
         renderDebtViewControls();
+      }
+    });
+  });
+
+  dom.nutritionTabButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextTab = button.dataset.nutritionTab;
+      if (nextTab && nextTab !== state.nutritionTab) {
+        state.nutritionTab = nextTab;
+        nutritionMealDraft = null;
+        renderNutritionViewControls();
+        renderNutritionPanel();
       }
     });
   });
@@ -2773,9 +2845,22 @@ async function loadNutritionPlan() {
   return state.nutritionPlan;
 }
 
+const NUTRITION_TABS = ["rules", "breakfast", "lunch", "dinner", "snack", "plan"];
+const NUTRITION_MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"];
+
+let nutritionSaveTimer = 0;
+let nutritionMealDraft = null; // { type, id: string|null, name, description, items: [{ingredient, qty}] }
+
 function renderNutritionPanel() {
   if (!dom.nutritionContent) {
     return;
+  }
+
+  if (dom.nutritionContent.dataset.nutritionWired !== "true") {
+    dom.nutritionContent.addEventListener("click", handleNutritionClick);
+    dom.nutritionContent.addEventListener("change", handleNutritionChange);
+    dom.nutritionContent.addEventListener("input", handleNutritionInput);
+    dom.nutritionContent.dataset.nutritionWired = "true";
   }
 
   const plan = state.nutritionPlan;
@@ -2795,13 +2880,71 @@ function renderNutritionPanel() {
     return;
   }
 
-  const renderRulesTable = () => `
+  const activeTab = NUTRITION_TABS.includes(state.nutritionTab) ? state.nutritionTab : "plan";
+  let body = "";
+  if (activeTab === "rules") {
+    body = renderNutritionRules(plan);
+  } else if (activeTab === "plan") {
+    body = renderNutritionWeeklyPlan(plan);
+  } else {
+    body = renderNutritionCatalog(plan, activeTab);
+  }
+
+  dom.nutritionContent.innerHTML = `<div class="nutrition-tab-body">${body}</div>`;
+}
+
+function nutritionIngredientMap(plan) {
+  const map = new Map();
+  (plan.ingredients || []).forEach((ing) => map.set(ing.id, ing));
+  return map;
+}
+
+function nutritionMealCost(meal, ingMap) {
+  if (!meal || !Array.isArray(meal.items)) {
+    return 0;
+  }
+  return meal.items.reduce((sum, item) => {
+    const ing = ingMap.get(item.ingredient);
+    const price = ing ? Number(ing.price_per_unit) || 0 : 0;
+    return sum + price * (Number(item.qty) || 0);
+  }, 0);
+}
+
+function findNutritionMeal(plan, type, id) {
+  if (!id) {
+    return null;
+  }
+  return (plan.meals?.[type] || []).find((meal) => meal.id === id) || null;
+}
+
+function findNutritionMealAnyType(plan, id) {
+  for (const type of NUTRITION_MEAL_TYPES) {
+    const meal = findNutritionMeal(plan, type, id);
+    if (meal) {
+      return { type, meal };
+    }
+  }
+  return null;
+}
+
+function formatNutritionQty(qty) {
+  const value = Number(qty) || 0;
+  return Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100);
+}
+
+function nutritionItemLabel(item, ingMap) {
+  const ing = ingMap.get(item.ingredient);
+  const name = ing ? ing.name : item.ingredient;
+  const unit = ing ? ing.unit : "";
+  return `${escapeHtml(formatNutritionQty(item.qty))} ${escapeHtml(unit)} · ${escapeHtml(name)}`;
+}
+
+function renderNutritionRules(plan) {
+  const rules = Array.isArray(plan.ground_rules) ? plan.ground_rules : [];
+  const condiments = plan.condiments || { yes: "", no: "" };
+  return `
     <article class="card nutrition-card">
-      <div class="card__head">
-        <div>
-          <h3>${escapeHtml(t("nutrition_rules_title"))}</h3>
-        </div>
-      </div>
+      <div class="card__head"><div><h3>${escapeHtml(t("nutrition_rules_title"))}</h3></div></div>
       <div class="table-scroll">
         <table class="data-table data-table--nutrition">
           <thead>
@@ -2811,27 +2954,308 @@ function renderNutritionPanel() {
             </tr>
           </thead>
           <tbody>
-            ${plan.rules.map(([rule, value]) => `
+            ${rules
+              .map(
+                ([rule, value]) => `
               <tr>
                 <td class="nutrition-cell-strong">${escapeHtml(rule)}</td>
                 <td>${escapeHtml(value)}</td>
               </tr>
-            `).join("")}
+            `,
+              )
+              .join("")}
           </tbody>
         </table>
       </div>
     </article>
-  `;
-
-  const renderWeekTable = (week) => `
     <article class="card nutrition-card">
-      <div class="card__head">
-        <div>
-          <h3>${escapeHtml(t("nutrition_week_title").replace("{week}", String(week.number)))}</h3>
+      <div class="card__head"><div><h3>${escapeHtml(t("nutrition_condiments_title"))}</h3></div></div>
+      <div class="nutrition-condiments">
+        <div class="nutrition-condiments__item nutrition-condiments__item--yes">
+          <p class="card__eyebrow">${escapeHtml(t("nutrition_condiments_yes"))}</p>
+          <p>${escapeHtml(condiments.yes || "")}</p>
+        </div>
+        <div class="nutrition-condiments__item nutrition-condiments__item--no">
+          <p class="card__eyebrow">${escapeHtml(t("nutrition_condiments_no"))}</p>
+          <p>${escapeHtml(condiments.no || "")}</p>
         </div>
       </div>
-      <div class="table-scroll">
-        <table class="data-table data-table--nutrition data-table--nutrition-week">
+    </article>
+  `;
+}
+
+function renderNutritionCatalog(plan, type) {
+  const ingMap = nutritionIngredientMap(plan);
+  const meals = plan.meals?.[type] || [];
+  const editingNew = nutritionMealDraft && nutritionMealDraft.type === type && !nutritionMealDraft.id;
+
+  const cards = meals
+    .map((meal) => {
+      if (nutritionMealDraft && nutritionMealDraft.type === type && nutritionMealDraft.id === meal.id) {
+        return renderNutritionMealEditor(plan);
+      }
+      return renderNutritionMealCard(meal, ingMap);
+    })
+    .join("");
+
+  return `
+    <article class="card nutrition-card">
+      <div class="card__head nutrition-catalog__head">
+        <div>
+          <h3>${escapeHtml(t(`nutrition_tab_${type}`))}</h3>
+          <p class="card__eyebrow">${escapeHtml(t("nutrition_catalog_count", { count: meals.length }))}</p>
+        </div>
+        <button type="button" class="button button--compact" data-nutrition-add-meal="${type}">${escapeHtml(t("nutrition_catalog_add"))}</button>
+      </div>
+      ${editingNew ? renderNutritionMealEditor(plan) : ""}
+      ${meals.length || editingNew ? "" : `<p class="nutrition-empty">${escapeHtml(t("nutrition_catalog_empty"))}</p>`}
+      <div class="nutrition-meal-grid">
+        ${cards}
+      </div>
+    </article>
+  `;
+}
+
+function renderNutritionMealCard(meal, ingMap) {
+  const cost = nutritionMealCost(meal, ingMap);
+  const items = Array.isArray(meal.items) ? meal.items : [];
+  return `
+    <div class="nutrition-meal">
+      <div class="nutrition-meal__head">
+        <h4 class="nutrition-meal__name">${escapeHtml(meal.name || "")}</h4>
+        <span class="nutrition-meal__cost">${escapeHtml(formatCop(cost))}</span>
+      </div>
+      ${meal.description ? `<p class="nutrition-meal__desc">${escapeHtml(meal.description)}</p>` : ""}
+      <ul class="nutrition-meal__items">
+        ${items.map((item) => `<li>${nutritionItemLabel(item, ingMap)}</li>`).join("")}
+      </ul>
+      <div class="nutrition-meal__actions">
+        <button type="button" class="nutrition-link-button" data-nutrition-edit-meal="${escapeHtml(meal.id)}">${escapeHtml(t("nutrition_meal_edit"))}</button>
+        <button type="button" class="nutrition-link-button nutrition-link-button--danger" data-nutrition-delete-meal="${escapeHtml(meal.id)}">${escapeHtml(t("nutrition_meal_delete"))}</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderNutritionMealEditor(plan) {
+  const draft = nutritionMealDraft;
+  const ingredients = (plan.ingredients || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+  const optionsHtml = (selected) =>
+    ingredients
+      .map(
+        (ing) =>
+          `<option value="${escapeHtml(ing.id)}"${ing.id === selected ? " selected" : ""}>${escapeHtml(ing.name)} (${escapeHtml(ing.unit)})</option>`,
+      )
+      .join("");
+
+  return `
+    <form class="nutrition-meal nutrition-meal--editor" data-nutrition-meal-form="true">
+      <div class="nutrition-field">
+        <label class="field__label">${escapeHtml(t("nutrition_meal_name"))}</label>
+        <input type="text" class="entry-input" data-nutrition-draft-name value="${escapeHtml(draft.name || "")}" />
+      </div>
+      <div class="nutrition-field">
+        <label class="field__label">${escapeHtml(t("nutrition_meal_desc"))}</label>
+        <textarea class="entry-input nutrition-textarea" data-nutrition-draft-desc rows="2">${escapeHtml(draft.description || "")}</textarea>
+      </div>
+      <div class="nutrition-field">
+        <label class="field__label">${escapeHtml(t("nutrition_meal_ingredients"))}</label>
+        <div class="nutrition-draft-items">
+          ${
+            draft.items.length
+              ? draft.items
+                  .map(
+                    (item, index) => `
+            <div class="nutrition-draft-item">
+              <select class="nutrition-select" data-nutrition-draft-ingredient data-item-index="${index}">
+                ${optionsHtml(item.ingredient)}
+              </select>
+              <input type="number" step="0.01" min="0" class="entry-input nutrition-qty-input" data-nutrition-draft-qty data-item-index="${index}" value="${escapeHtml(String(item.qty ?? ""))}" />
+              <button type="button" class="nutrition-link-button nutrition-link-button--danger" data-nutrition-remove-item="${index}" aria-label="${escapeHtml(t("nutrition_meal_delete"))}">✕</button>
+            </div>
+          `,
+                  )
+                  .join("")
+              : `<p class="nutrition-empty">${escapeHtml(t("nutrition_meal_no_items"))}</p>`
+          }
+        </div>
+        <button type="button" class="nutrition-link-button" data-nutrition-add-item="true">+ ${escapeHtml(t("nutrition_meal_add_ingredient"))}</button>
+      </div>
+      <div class="nutrition-meal__actions">
+        <button type="button" class="button button--compact" data-nutrition-save-meal="true">${escapeHtml(t("nutrition_meal_save"))}</button>
+        <button type="button" class="nutrition-link-button" data-nutrition-cancel-meal="true">${escapeHtml(t("nutrition_meal_cancel"))}</button>
+      </div>
+    </form>
+  `;
+}
+
+function computeNutritionShoppingList(plan, ingMap) {
+  const totals = new Map();
+  const order = [];
+  (plan.week || []).forEach((day) => {
+    NUTRITION_MEAL_TYPES.forEach((type) => {
+      const meal = findNutritionMeal(plan, type, day[type]);
+      if (!meal || !Array.isArray(meal.items)) {
+        return;
+      }
+      meal.items.forEach((item) => {
+        const qty = Number(item.qty) || 0;
+        if (!totals.has(item.ingredient)) {
+          totals.set(item.ingredient, 0);
+          order.push(item.ingredient);
+        }
+        totals.set(item.ingredient, totals.get(item.ingredient) + qty);
+      });
+    });
+  });
+
+  const lines = order
+    .map((id) => {
+      const ing = ingMap.get(id);
+      const qty = totals.get(id);
+      const price = ing ? Number(ing.price_per_unit) || 0 : 0;
+      return {
+        id,
+        name: ing ? ing.name : id,
+        unit: ing ? ing.unit : "",
+        qty,
+        price,
+        total: qty * price,
+      };
+    })
+    .sort((a, b) => b.total - a.total);
+
+  const total = lines.reduce((sum, line) => sum + line.total, 0);
+  return { lines, total };
+}
+
+function randomNutritionMealId(plan, type) {
+  const meals = plan.meals?.[type] || [];
+  if (!meals.length) {
+    return null;
+  }
+  return meals[Math.floor(Math.random() * meals.length)].id;
+}
+
+function randomizeNutritionDay(plan, dayIndex) {
+  const day = (plan.week || [])[dayIndex];
+  if (!day) {
+    return;
+  }
+  NUTRITION_MEAL_TYPES.forEach((type) => {
+    day[type] = randomNutritionMealId(plan, type);
+  });
+}
+
+function renderNutritionWeeklyPlan(plan) {
+  const ingMap = nutritionIngredientMap(plan);
+  const week = Array.isArray(plan.week) ? plan.week : [];
+
+  const costCache = new Map();
+  const costOf = (type, id) => {
+    if (!id) {
+      return 0;
+    }
+    const key = `${type}:${id}`;
+    if (!costCache.has(key)) {
+      costCache.set(key, nutritionMealCost(findNutritionMeal(plan, type, id), ingMap));
+    }
+    return costCache.get(key);
+  };
+
+  let weeklyCost = 0;
+  let assignedMeals = 0;
+  week.forEach((day) => {
+    NUTRITION_MEAL_TYPES.forEach((type) => {
+      if (day[type]) {
+        assignedMeals += 1;
+        weeklyCost += costOf(type, day[type]);
+      }
+    });
+  });
+  const dailyAvg = week.length ? weeklyCost / week.length : 0;
+  const shopping = computeNutritionShoppingList(plan, ingMap);
+
+  const kpis = [
+    { label: t("nutrition_kpi_weekly_cost"), value: formatCop(weeklyCost), meta: "" },
+    { label: t("nutrition_kpi_daily_avg"), value: formatCop(dailyAvg), meta: "" },
+    { label: t("nutrition_kpi_meals"), value: `${assignedMeals} / ${week.length * NUTRITION_MEAL_TYPES.length}`, meta: "" },
+    { label: t("nutrition_kpi_ingredients"), value: String(shopping.lines.length), meta: "" },
+  ];
+
+  const mealOptions = (type, selectedId) => {
+    const meals = plan.meals?.[type] || [];
+    return (
+      `<option value="">${escapeHtml(t("nutrition_none_option"))}</option>` +
+      meals
+        .map(
+          (meal) =>
+            `<option value="${escapeHtml(meal.id)}"${meal.id === selectedId ? " selected" : ""}>${escapeHtml(meal.name)}</option>`,
+        )
+        .join("")
+    );
+  };
+
+  const planRows = week
+    .map((day, dayIndex) => {
+      let dayTotal = 0;
+      const cells = NUTRITION_MEAL_TYPES.map((type) => {
+        const id = day[type] || "";
+        dayTotal += costOf(type, id);
+        return `
+        <td class="nutrition-plan-cell">
+          <select class="nutrition-select nutrition-plan-select" data-nutrition-plan-cell data-day-index="${dayIndex}" data-slot="${type}">
+            ${mealOptions(type, id)}
+          </select>
+        </td>
+      `;
+      }).join("");
+      return `
+      <tr>
+        <td class="nutrition-cell-strong nutrition-day-cell">
+          <span class="nutrition-day-name">${escapeHtml(day.day || `Día ${dayIndex + 1}`)}</span>
+          <button type="button" class="nutrition-dice" data-nutrition-random-day="${dayIndex}" title="${escapeHtml(t("nutrition_random_day"))}" aria-label="${escapeHtml(t("nutrition_random_day"))}">🎲</button>
+        </td>
+        ${cells}
+        <td class="nutrition-plan-total">${escapeHtml(formatCop(dayTotal))}</td>
+      </tr>
+    `;
+    })
+    .join("");
+
+  const shoppingRows = shopping.lines
+    .map(
+      (line) => `
+      <tr>
+        <td class="nutrition-cell-strong">${escapeHtml(line.name)}</td>
+        <td>${escapeHtml(formatNutritionQty(line.qty))} ${escapeHtml(line.unit)}</td>
+        <td class="nutrition-price-cell">
+          <div class="nutrition-price-field">
+            <input type="number" min="0" step="1" class="entry-input nutrition-price-input" data-nutrition-price data-ingredient-id="${escapeHtml(line.id)}" value="${escapeHtml(String(line.price))}" />
+            <span class="nutrition-price-unit">/${escapeHtml(line.unit)}</span>
+          </div>
+        </td>
+        <td class="nutrition-plan-total">${escapeHtml(formatCop(line.total))}</td>
+      </tr>
+    `,
+    )
+    .join("");
+
+  return `
+    <section class="nutrition-summary">
+      <div class="card__head"><div><h3>${escapeHtml(t("nutrition_plan_summary_title"))}</h3></div></div>
+      <div class="kpi-grid nutrition-kpi-grid">
+        ${kpis.map(renderKpiCard).join("")}
+      </div>
+    </section>
+
+    <article class="card nutrition-card">
+      <div class="card__head nutrition-catalog__head">
+        <div><h3>${escapeHtml(t("nutrition_plan_table_title"))}</h3></div>
+        <button type="button" class="button button--compact" data-nutrition-random-week="true">🎲 ${escapeHtml(t("nutrition_random_week"))}</button>
+      </div>
+      <div class="nutrition-table-fit">
+        <table class="data-table data-table--nutrition data-table--nutrition-plan">
           <thead>
             <tr>
               <th>${escapeHtml(t("nutrition_col_day"))}</th>
@@ -2839,141 +3263,267 @@ function renderNutritionPanel() {
               <th>${escapeHtml(t("nutrition_col_lunch"))}</th>
               <th>${escapeHtml(t("nutrition_col_snack"))}</th>
               <th>${escapeHtml(t("nutrition_col_dinner"))}</th>
+              <th>${escapeHtml(t("nutrition_plan_day_total"))}</th>
             </tr>
           </thead>
-          <tbody>
-            ${week.days.map((d) => `
-              <tr>
-                <td class="nutrition-cell-strong">${escapeHtml(d.day)}</td>
-                <td>${escapeHtml(d.breakfast)}</td>
-                <td>${escapeHtml(d.lunch)}</td>
-                <td>${escapeHtml(d.snack)}</td>
-                <td>${escapeHtml(d.dinner)}</td>
-              </tr>
-            `).join("")}
-          </tbody>
+          <tbody>${planRows}</tbody>
         </table>
       </div>
     </article>
-  `;
 
-  const renderCarbsTable = () => {
-    const allDays = plan.weeks.flatMap((w) => w.days);
-    return `
-      <article class="card nutrition-card">
-        <div class="card__head">
-          <div>
-            <h3>${escapeHtml(t("nutrition_carbs_title"))}</h3>
-          </div>
-        </div>
-        <div class="table-scroll">
-          <table class="data-table data-table--nutrition data-table--nutrition-carbs">
-            <thead>
-              <tr>
-                <th>${escapeHtml(t("nutrition_col_day"))}</th>
-                <th>${escapeHtml(t("nutrition_col_carbs"))}</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${allDays.map((d) => `
-                <tr>
-                  <td class="nutrition-cell-strong">${escapeHtml(d.day)}</td>
-                  <td class="nutrition-cell-carbs">${escapeHtml(d.carbs)}</td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
-        </div>
-      </article>
-    `;
-  };
-
-  const renderPrepTable = (block) => `
     <article class="card nutrition-card">
-      <div class="card__head">
+      <div class="card__head nutrition-catalog__head">
         <div>
-          <h3>${escapeHtml(t("nutrition_prep_week").replace("{week}", String(block.week)))}</h3>
+          <h3>${escapeHtml(t("nutrition_shopping_title"))}</h3>
+          <p class="card__eyebrow">${escapeHtml(t("nutrition_shopping_hint"))}</p>
         </div>
+        <span class="nutrition-shopping-total">${escapeHtml(t("nutrition_shopping_total"))}: ${escapeHtml(formatCop(shopping.total))}</span>
       </div>
-      <div class="table-scroll">
-        <table class="data-table data-table--nutrition">
+      ${
+        shopping.lines.length
+          ? `
+      <div class="nutrition-table-fit">
+        <table class="data-table data-table--nutrition data-table--nutrition-shopping">
           <thead>
             <tr>
-              <th>${escapeHtml(t("nutrition_prep_col_item"))}</th>
-              <th>${escapeHtml(t("nutrition_prep_col_amount"))}</th>
-              <th>${escapeHtml(t("nutrition_prep_col_how"))}</th>
+              <th>${escapeHtml(t("nutrition_shopping_col_ingredient"))}</th>
+              <th>${escapeHtml(t("nutrition_shopping_col_qty"))}</th>
+              <th>${escapeHtml(t("nutrition_shopping_col_price"))}</th>
+              <th>${escapeHtml(t("nutrition_shopping_col_total"))}</th>
             </tr>
           </thead>
-          <tbody>
-            ${block.items.map(([item, amount, how]) => `
-              <tr>
-                <td class="nutrition-cell-strong">${escapeHtml(item)}</td>
-                <td>${escapeHtml(amount)}</td>
-                <td>${escapeHtml(how)}</td>
-              </tr>
-            `).join("")}
-          </tbody>
+          <tbody>${shoppingRows}</tbody>
         </table>
-      </div>
+      </div>`
+          : `<p class="nutrition-empty">${escapeHtml(t("nutrition_shopping_empty"))}</p>`
+      }
     </article>
   `;
+}
 
-  const renderMarketTable = () => `
-    <article class="card nutrition-card">
-      <div class="card__head">
-        <div>
-          <h3>${escapeHtml(t("nutrition_market_title"))}</h3>
-        </div>
-      </div>
-      <div class="table-scroll">
-        <table class="data-table data-table--nutrition data-table--nutrition-market">
-          <thead>
-            <tr>
-              <th>${escapeHtml(t("nutrition_market_col_category"))}</th>
-              <th>${escapeHtml(t("nutrition_market_col_amount"))}</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${plan.market.map(([category, amount]) => `
-              <tr>
-                <td class="nutrition-cell-strong">${escapeHtml(category)}</td>
-                <td>${escapeHtml(amount)}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      </div>
-    </article>
-  `;
+function handleNutritionClick(event) {
+  const plan = state.nutritionPlan;
+  if (!plan) {
+    return;
+  }
+  const target = event.target.closest(
+    "[data-nutrition-add-meal],[data-nutrition-edit-meal],[data-nutrition-delete-meal],[data-nutrition-add-item],[data-nutrition-remove-item],[data-nutrition-save-meal],[data-nutrition-cancel-meal],[data-nutrition-random-week],[data-nutrition-random-day]",
+  );
+  if (!target) {
+    return;
+  }
 
-  const renderCondiments = () => `
-    <article class="card nutrition-card">
-      <div class="card__head">
-        <div>
-          <h3>${escapeHtml(t("nutrition_condiments_title"))}</h3>
-        </div>
-      </div>
-      <div class="nutrition-condiments">
-        <div class="nutrition-condiments__item nutrition-condiments__item--yes">
-          <p class="card__eyebrow">${escapeHtml(t("nutrition_condiments_yes"))}</p>
-          <p>${escapeHtml(plan.condiments.yes)}</p>
-        </div>
-        <div class="nutrition-condiments__item nutrition-condiments__item--no">
-          <p class="card__eyebrow">${escapeHtml(t("nutrition_condiments_no"))}</p>
-          <p>${escapeHtml(plan.condiments.no)}</p>
-        </div>
-      </div>
-    </article>
-  `;
+  if (target.hasAttribute("data-nutrition-random-week")) {
+    (plan.week || []).forEach((_, dayIndex) => randomizeNutritionDay(plan, dayIndex));
+    scheduleNutritionSave();
+    renderNutritionPanel();
+    return;
+  }
+  if (target.hasAttribute("data-nutrition-random-day")) {
+    randomizeNutritionDay(plan, Number(target.dataset.nutritionRandomDay));
+    scheduleNutritionSave();
+    renderNutritionPanel();
+    return;
+  }
+  if (target.hasAttribute("data-nutrition-add-meal")) {
+    nutritionMealDraft = { type: target.dataset.nutritionAddMeal, id: null, name: "", description: "", items: [] };
+    renderNutritionPanel();
+    return;
+  }
+  if (target.hasAttribute("data-nutrition-edit-meal")) {
+    const found = findNutritionMealAnyType(plan, target.dataset.nutritionEditMeal);
+    if (found) {
+      nutritionMealDraft = {
+        type: found.type,
+        id: found.meal.id,
+        name: found.meal.name || "",
+        description: found.meal.description || "",
+        items: (found.meal.items || []).map((item) => ({ ingredient: item.ingredient, qty: item.qty })),
+      };
+      renderNutritionPanel();
+    }
+    return;
+  }
+  if (target.hasAttribute("data-nutrition-delete-meal")) {
+    const id = target.dataset.nutritionDeleteMeal;
+    const found = findNutritionMealAnyType(plan, id);
+    if (!found) {
+      return;
+    }
+    if (!window.confirm(t("nutrition_meal_delete_confirm", { name: found.meal.name || id }))) {
+      return;
+    }
+    plan.meals[found.type] = (plan.meals[found.type] || []).filter((meal) => meal.id !== id);
+    (plan.week || []).forEach((day) => {
+      NUTRITION_MEAL_TYPES.forEach((type) => {
+        if (day[type] === id) {
+          day[type] = null;
+        }
+      });
+    });
+    if (nutritionMealDraft && nutritionMealDraft.id === id) {
+      nutritionMealDraft = null;
+    }
+    scheduleNutritionSave();
+    renderNutritionPanel();
+    return;
+  }
+  if (target.hasAttribute("data-nutrition-add-item")) {
+    if (nutritionMealDraft) {
+      const firstIngredient = (plan.ingredients || [])[0];
+      nutritionMealDraft.items.push({ ingredient: firstIngredient ? firstIngredient.id : "", qty: 1 });
+      renderNutritionPanel();
+    }
+    return;
+  }
+  if (target.hasAttribute("data-nutrition-remove-item")) {
+    if (nutritionMealDraft) {
+      nutritionMealDraft.items.splice(Number(target.dataset.nutritionRemoveItem), 1);
+      renderNutritionPanel();
+    }
+    return;
+  }
+  if (target.hasAttribute("data-nutrition-save-meal")) {
+    commitNutritionMealDraft();
+    return;
+  }
+  if (target.hasAttribute("data-nutrition-cancel-meal")) {
+    nutritionMealDraft = null;
+    renderNutritionPanel();
+  }
+}
 
-  dom.nutritionContent.innerHTML = `
-    ${renderRulesTable()}
-    ${plan.weeks.map(renderWeekTable).join("")}
-    ${renderCarbsTable()}
-    ${plan.prep.map(renderPrepTable).join("")}
-    ${renderMarketTable()}
-    ${renderCondiments()}
-  `;
+function handleNutritionChange(event) {
+  const plan = state.nutritionPlan;
+  if (!plan) {
+    return;
+  }
+  const target = event.target;
+
+  if (target.hasAttribute("data-nutrition-plan-cell")) {
+    const dayIndex = Number(target.dataset.dayIndex);
+    const slot = target.dataset.slot;
+    if (plan.week[dayIndex]) {
+      plan.week[dayIndex][slot] = target.value || null;
+      scheduleNutritionSave();
+      renderNutritionPanel();
+    }
+    return;
+  }
+  if (target.hasAttribute("data-nutrition-price")) {
+    const ing = (plan.ingredients || []).find((item) => item.id === target.dataset.ingredientId);
+    if (ing) {
+      ing.price_per_unit = Math.max(0, Number(target.value) || 0);
+      scheduleNutritionSave();
+      renderNutritionPanel();
+    }
+    return;
+  }
+  if (target.hasAttribute("data-nutrition-draft-ingredient")) {
+    if (nutritionMealDraft) {
+      const index = Number(target.dataset.itemIndex);
+      if (nutritionMealDraft.items[index]) {
+        nutritionMealDraft.items[index].ingredient = target.value;
+      }
+    }
+  }
+}
+
+function handleNutritionInput(event) {
+  const target = event.target;
+  if (target.hasAttribute("data-nutrition-draft-name")) {
+    if (nutritionMealDraft) {
+      nutritionMealDraft.name = target.value;
+    }
+    return;
+  }
+  if (target.hasAttribute("data-nutrition-draft-desc")) {
+    if (nutritionMealDraft) {
+      nutritionMealDraft.description = target.value;
+    }
+    return;
+  }
+  if (target.hasAttribute("data-nutrition-draft-qty")) {
+    if (nutritionMealDraft) {
+      const index = Number(target.dataset.itemIndex);
+      if (nutritionMealDraft.items[index]) {
+        nutritionMealDraft.items[index].qty = Number(target.value) || 0;
+      }
+    }
+  }
+}
+
+function commitNutritionMealDraft() {
+  const plan = state.nutritionPlan;
+  const draft = nutritionMealDraft;
+  if (!plan || !draft) {
+    return;
+  }
+  const name = (draft.name || "").trim();
+  if (!name) {
+    window.alert(t("nutrition_meal_name"));
+    return;
+  }
+  const items = draft.items
+    .filter((item) => item.ingredient)
+    .map((item) => ({ ingredient: item.ingredient, qty: Number(item.qty) || 0 }));
+  if (!plan.meals[draft.type]) {
+    plan.meals[draft.type] = [];
+  }
+  const list = plan.meals[draft.type];
+  if (draft.id) {
+    const meal = list.find((item) => item.id === draft.id);
+    if (meal) {
+      meal.name = name;
+      meal.description = (draft.description || "").trim();
+      meal.items = items;
+    }
+  } else {
+    list.push({ id: nutritionMealId(plan, draft.type, name), name, description: (draft.description || "").trim(), items });
+  }
+  nutritionMealDraft = null;
+  scheduleNutritionSave();
+  renderNutritionPanel();
+}
+
+function nutritionMealId(plan, type, name) {
+  const slug = name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+  const base = `${type[0] || "m"}_${slug || "meal"}`;
+  const existing = new Set();
+  Object.values(plan.meals || {}).forEach((arr) => (arr || []).forEach((meal) => existing.add(meal.id)));
+  let id = base;
+  let suffix = 2;
+  while (existing.has(id)) {
+    id = `${base}_${suffix}`;
+    suffix += 1;
+  }
+  return id;
+}
+
+function scheduleNutritionSave() {
+  clearTimeout(nutritionSaveTimer);
+  nutritionSaveTimer = setTimeout(saveNutritionPlan, 400);
+}
+
+async function saveNutritionPlan() {
+  if (!state.nutritionPlan) {
+    return;
+  }
+  try {
+    await fetch("/api/nutrition/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "finance/data/nutrition/plan.json", document: state.nutritionPlan }),
+    });
+  } catch (error) {
+    console.error("Could not save nutrition plan", error);
+  }
 }
 
 function renderCreditSimulator() {
@@ -3614,6 +4164,7 @@ function renderAppMode() {
   renderCashFlowControlsAvailability(isCashFlow);
   renderDebtViewControls();
   renderCreditViewControls();
+  renderNutritionViewControls();
 
   if (dom.debtsPanel) {
     dom.debtsPanel.hidden = appMode !== "debts";
@@ -3678,6 +4229,20 @@ function renderCreditViewControls() {
   if (dom.creditViewControls) {
     dom.creditViewControls.hidden = !isCredit;
   }
+}
+
+function renderNutritionViewControls() {
+  const isNutrition = normalizeAppMode(state.appMode) === "nutrition";
+  if (dom.nutritionViewControls) {
+    dom.nutritionViewControls.hidden = !isNutrition;
+  }
+
+  const activeTab = NUTRITION_TABS.includes(state.nutritionTab) ? state.nutritionTab : "plan";
+  dom.nutritionTabButtons.forEach((button) => {
+    const isActive = button.dataset.nutritionTab === activeTab;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  });
 }
 
 function renderViewMode() {

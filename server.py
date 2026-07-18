@@ -165,6 +165,9 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             if self.path == "/api/debts/sync_cash_flow":
                 self._handle_sync_debt_cash_flow()
                 return
+            if self.path == "/api/nutrition/save":
+                self._handle_save_nutrition()
+                return
 
             self.send_error(HTTPStatus.NOT_FOUND, "Endpoint not found")
         except (KeyError, TypeError, ValueError, IndexError, json.JSONDecodeError) as error:
@@ -1005,6 +1008,25 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                 "cash_flow_sync": sync_report,
             },
         )
+
+    def _handle_save_nutrition(self) -> None:
+        payload = self._read_json_body()
+        relative_path = payload.get("path", "finance/data/nutrition/plan.json")
+        document = payload["document"]
+        if not isinstance(document, dict):
+            raise ValueError("Missing nutrition document")
+        required_keys = ("ground_rules", "ingredients", "meals", "week")
+        missing = [key for key in required_keys if key not in document]
+        if missing:
+            raise ValueError(f"Invalid nutrition document, missing: {', '.join(missing)}")
+        if not isinstance(document.get("meals"), dict):
+            raise ValueError("Invalid nutrition document: 'meals' must be an object")
+        if not isinstance(document.get("week"), list):
+            raise ValueError("Invalid nutrition document: 'week' must be a list")
+
+        target_path = self._resolve_data_path(relative_path)
+        self._write_document(target_path, document)
+        self._send_json(HTTPStatus.OK, {"ok": True, "path": relative_path})
 
     def _read_json_body(self) -> dict:
         content_length = int(self.headers.get("Content-Length", "0"))
