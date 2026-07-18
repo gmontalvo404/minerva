@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import time
+import unicodedata
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 import webbrowser
@@ -15,19 +17,63 @@ PORT = 8123
 ROOT = Path(__file__).resolve().parent
 FINANCE_DATA_ROOT = (ROOT / "finance/data").resolve()
 ALLOWED_TYPES = {"needs", "wants", "savings", "debts"}
+MONTH_FOLDERS = (
+    "01-january", "02-february", "03-march", "04-april",
+    "05-may", "06-june", "07-july", "08-august",
+    "09-september", "10-october", "11-november", "12-december",
+)
 COINBASE_USD_RATE_ENDPOINT = "https://api.coinbase.com/v2/exchange-rates?currency=USD"
+DEV_STATIC_CACHE_EXTENSIONS = {".css", ".html", ".js"}
+LIVE_RELOAD_POLL_SECONDS = 0.5
+LIVE_RELOAD_WATCH_PATHS = (
+    ROOT / "index.html",
+    ROOT / "app.js",
+    ROOT / "styles.css",
+    ROOT / "server.py",
+)
 
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
+def live_reload_signature() -> str:
+    parts = []
+    for path in LIVE_RELOAD_WATCH_PATHS:
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            parts.append(f"{path.name}:missing")
+        else:
+            parts.append(f"{path.name}:{stat.st_mtime_ns}:{stat.st_size}")
+    return "|".join(parts)
+
+
 class FinanceDataHandler(SimpleHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
+    def handle(self) -> None:
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+            return
+
+    def end_headers(self) -> None:
+        parsed_path = urlparse(self.path)
+        if self._should_disable_static_cache(parsed_path.path):
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+        super().end_headers()
+
     def do_GET(self) -> None:
         parsed_path = urlparse(self.path)
+        if parsed_path.path == "/api/dev/live-reload":
+            self._handle_live_reload()
+            return
         if parsed_path.path == "/api/fx/usd-cop":
             try:
                 self._handle_get_usd_cop_rate()
@@ -36,6 +82,48 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             return
 
         super().do_GET()
+
+    def _handle_live_reload(self) -> None:
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+
+        last_signature = live_reload_signature()
+        last_heartbeat = time.monotonic()
+        try:
+            self._send_sse_event("ready", last_signature)
+
+            while True:
+                time.sleep(LIVE_RELOAD_POLL_SECONDS)
+                current_signature = live_reload_signature()
+                if current_signature != last_signature:
+                    last_signature = current_signature
+                    last_heartbeat = time.monotonic()
+                    self._send_sse_event("reload", current_signature)
+                    continue
+
+                if time.monotonic() - last_heartbeat >= 15:
+                    last_heartbeat = time.monotonic()
+                    self.wfile.write(b": keepalive\n\n")
+                    self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            return
+
+    def _send_sse_event(self, event: str, data: str) -> None:
+        try:
+            payload = f"event: {event}\ndata: {data}\n\n".encode("utf-8")
+            self.wfile.write(payload)
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            raise
+
+    @staticmethod
+    def _should_disable_static_cache(path: str) -> bool:
+        if path in {"", "/"}:
+            return True
+        return Path(path).suffix in DEV_STATIC_CACHE_EXTENSIONS
 
     def do_POST(self) -> None:
         try:
@@ -65,6 +153,15 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                 return
             if self.path == "/api/incomes/reorder":
                 self._handle_reorder_income()
+                return
+            if self.path == "/api/debts/update":
+                self._handle_update_debt()
+                return
+            if self.path == "/api/debts/create":
+                self._handle_create_debt()
+                return
+            if self.path == "/api/debts/sync_cash_flow":
+                self._handle_sync_debt_cash_flow()
                 return
 
             self.send_error(HTTPStatus.NOT_FOUND, "Endpoint not found")
@@ -159,6 +256,18 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
 
         updated_entry = deepcopy(source_entry)
         normalized_updates = self._normalize_updates(updates)
+
+        if self._is_auto_managed_entry(source_entry):
+            if target_type != current_type:
+                raise ValueError(
+                    "This entry is auto-generated from a debt and its type cannot be changed."
+                )
+            disallowed = [key for key in normalized_updates.keys() if key != "paid"]
+            if disallowed:
+                raise ValueError(
+                    "This entry is auto-generated from a debt. Only the paid status can be edited here; update the debt instead."
+                )
+
         updated_entry.update(normalized_updates)
         if "paid" in normalized_updates:
             updated_entry.pop("active", None)
@@ -202,6 +311,9 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         if is_unified_outcomes and changes:
             self._write_document(source_path, source_document)
             response_path = relative_path
+
+        if changes:
+            self._maybe_sync_after_entry_mutation(source_entry, updated_entry)
 
         self._send_json(
             HTTPStatus.OK,
@@ -256,6 +368,8 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
 
         self._write_document(target_path, document)
 
+        self._maybe_sync_after_entry_mutation(new_entry)
+
         self._send_json(
             HTTPStatus.CREATED,
             {
@@ -274,8 +388,15 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         if entry_index < 0 or entry_index >= len(entries):
             raise IndexError("Entry index out of range")
 
-        entries.pop(entry_index)
+        if self._is_auto_managed_entry(entries[entry_index]):
+            raise ValueError(
+                "This entry is auto-generated from a debt and cannot be deleted here. Remove the cash-flow link on the debt instead."
+            )
+
+        removed_entry = entries.pop(entry_index)
         self._write_document(target_path, document)
+
+        self._maybe_sync_after_entry_mutation(removed_entry)
 
         self._send_json(
             HTTPStatus.OK,
@@ -450,10 +571,454 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             },
         )
 
+    def _handle_update_debt(self) -> None:
+        payload = self._read_json_body()
+        relative_path = payload.get("path", "finance/data/debts/debts.json")
+        debt_id = str(payload["debt_id"]).strip()
+        updates = payload["updates"]
+        if not debt_id:
+            raise ValueError("Missing debt_id")
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("Missing updates payload")
+
+        document, debts, target_path = self._load_debts(relative_path)
+        debt_index = next(
+            (index for index, debt in enumerate(debts) if isinstance(debt, dict) and str(debt.get("id")) == debt_id),
+            -1,
+        )
+        if debt_index < 0:
+            raise IndexError("Debt not found")
+
+        source_debt = debts[debt_index]
+        updated_debt = deepcopy(source_debt)
+        normalized_updates = self._normalize_debt_updates(updates)
+        updated_debt.update(normalized_updates)
+        self._normalize_debt_entry(updated_debt)
+        changes = self._build_debt_change_map(source_debt, updated_debt)
+
+        sync_report = None
+        if changes:
+            debts[debt_index] = updated_debt
+            self._write_document(target_path, document)
+            sync_report = self._safe_sync_auto_cash_flow_entries(debts)
+
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "ok": True,
+                "path": relative_path,
+                "debt_id": debt_id,
+                "changes": changes,
+                "cash_flow_sync": sync_report,
+            },
+        )
+
+    def _safe_sync_auto_cash_flow_entries(self, debts: list) -> dict | None:
+        try:
+            return self._sync_auto_cash_flow_entries(debts)
+        except Exception as error:  # noqa: BLE001
+            return {"error": str(error)}
+
+    def _handle_sync_debt_cash_flow(self) -> None:
+        payload = self._read_json_body() if self.headers.get("Content-Length") else {}
+        relative_path = payload.get("path", "finance/data/debts/debts.json")
+        _, debts, _ = self._load_debts(relative_path)
+        report = self._sync_auto_cash_flow_entries(debts)
+        self._send_json(
+            HTTPStatus.OK,
+            {"ok": True, **report},
+        )
+
+    def _compute_debt_monthly_payment(self, debt: dict) -> float:
+        capital = self._to_finite_float(debt.get("capital", 0))
+        initial_investment = self._to_finite_float(debt.get("initial_investment", 0))
+        financed = max(capital - initial_investment, 0.0)
+        if financed <= 0:
+            return 0.0
+
+        try:
+            term = self._to_bounded_int(debt.get("term_months", 1), minimum=1, maximum=600)
+        except ValueError:
+            return 0.0
+
+        rate_str = str(debt.get("annual_interest_rate", "0") or "0").replace(",", ".").strip()
+        try:
+            annual_rate = float(rate_str) if rate_str else 0.0
+        except ValueError:
+            annual_rate = 0.0
+
+        monthly_rate = annual_rate / 100 / 12
+        if monthly_rate > 0:
+            compound = (1 + monthly_rate) ** term
+            installment = financed * monthly_rate * compound / (compound - 1)
+        else:
+            installment = financed / term
+
+        insurance = self._to_finite_float(debt.get("insurance", 0))
+        other_charges = self._to_finite_float(debt.get("other_charges", 0))
+        return installment + insurance + other_charges
+
+    def _collect_debt_abonos(self) -> dict:
+        """Scan cash flow files for manual abono entries (extra_payment or category=abono)
+        with linked_debts, grouped by debt_id and absolute month."""
+        result: dict = {}
+        cash_flow_root = FINANCE_DATA_ROOT / "cash_flow"
+        if not cash_flow_root.exists():
+            return result
+        for year_dir in cash_flow_root.iterdir():
+            if not year_dir.is_dir():
+                continue
+            try:
+                year = int(year_dir.name)
+            except ValueError:
+                continue
+            outcomes_dir = year_dir / "outcomes"
+            if not outcomes_dir.is_dir():
+                continue
+            for month_folder in MONTH_FOLDERS:
+                month_path = outcomes_dir / f"{month_folder}.json"
+                if not month_path.exists():
+                    continue
+                try:
+                    document = json.loads(month_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                entries = document.get("entries") if isinstance(document, dict) else None
+                if not isinstance(entries, list):
+                    continue
+                month_idx = MONTH_FOLDERS.index(month_folder)
+                absolute_month = year * 12 + month_idx
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    if entry.get("auto_generated") is True:
+                        continue
+                    category = str(entry.get("category", "")).strip().lower()
+                    is_abono = entry.get("extra_payment") is True or category in ("abono", "abonos")
+                    if not is_abono:
+                        continue
+                    linked = entry.get("linked_debts")
+                    if not isinstance(linked, list) or not linked:
+                        continue
+                    amount = self._to_finite_float(entry.get("amount_cop", 0))
+                    if amount <= 0:
+                        continue
+                    for debt_id in linked:
+                        debt_id_str = str(debt_id).strip()
+                        if not debt_id_str:
+                            continue
+                        bucket = result.setdefault(debt_id_str, {"by_absolute_month": {}})
+                        by_abs = bucket["by_absolute_month"]
+                        by_abs[absolute_month] = by_abs.get(absolute_month, 0.0) + amount
+        return result
+
+    def _compute_debt_schedule_amounts(self, debt: dict, abono_bucket: dict) -> list:
+        """Return per-period monthly payment amounts, matching front-end buildDebtDetail."""
+        capital = self._to_finite_float(debt.get("capital", 0))
+        initial_investment = self._to_finite_float(debt.get("initial_investment", 0))
+        financed = max(capital - initial_investment, 0.0)
+        if financed <= 0:
+            return []
+        try:
+            term = self._to_bounded_int(debt.get("term_months", 1), minimum=1, maximum=600)
+        except ValueError:
+            return []
+        if term <= 0:
+            return []
+        rate_str = str(debt.get("annual_interest_rate", "0") or "0").replace(",", ".").strip()
+        try:
+            annual_rate = float(rate_str) if rate_str else 0.0
+        except ValueError:
+            annual_rate = 0.0
+        monthly_rate = annual_rate / 100 / 12
+        insurance = self._to_finite_float(debt.get("insurance", 0))
+        other_charges = self._to_finite_float(debt.get("other_charges", 0))
+        strategy = (
+            "reduce_payment"
+            if str(debt.get("abono_strategy", "")).strip().lower() == "reduce_payment"
+            else "reduce_term"
+        )
+
+        link = debt.get("cash_flow_link") or {}
+        start_year_str = str(link.get("start_year", "")).strip()
+        start_month_folder = str(link.get("start_month", "")).strip().lower()
+        if not start_year_str.lstrip("-").isdigit() or start_month_folder not in MONTH_FOLDERS:
+            return []
+        start_year = int(start_year_str)
+        start_month_idx = MONTH_FOLDERS.index(start_month_folder)
+        start_absolute = start_year * 12 + start_month_idx
+
+        pre_schedule_total = 0.0
+        period_abonos: dict = {}
+        by_abs_month = (abono_bucket or {}).get("by_absolute_month", {})
+        for abs_month, amount in by_abs_month.items():
+            if abs_month < start_absolute:
+                pre_schedule_total += amount
+            else:
+                period = abs_month - start_absolute + 1
+                if 1 <= period <= term:
+                    period_abonos[period] = period_abonos.get(period, 0.0) + amount
+
+        initial_balance = max(financed - pre_schedule_total, 0.0)
+        applied_pre = max(financed - initial_balance, 0.0)
+        installment_base = (
+            initial_balance
+            if strategy == "reduce_payment" and applied_pre > 0
+            else financed
+        )
+        if monthly_rate > 0 and term > 0:
+            compound = (1 + monthly_rate) ** term
+            if compound - 1 != 0:
+                installment = installment_base * monthly_rate * compound / (compound - 1)
+            else:
+                installment = installment_base / term
+        else:
+            installment = installment_base / term if term > 0 else 0.0
+        actual_payment = installment + insurance + other_charges
+
+        schedule: list = []
+        balance = initial_balance
+        current_installment = installment
+        for period in range(1, term + 1):
+            interest = balance * monthly_rate
+            regular_principal = max(current_installment - interest, 0.0)
+            principal = balance if period == term else min(regular_principal, balance)
+            period_installment = principal + interest
+            period_total_charge = period_installment + insurance + other_charges
+            if strategy == "reduce_payment":
+                payment = period_total_charge if period_installment > 0 else 0.0
+            else:
+                payment = min(actual_payment, period_total_charge) if period_installment > 0 else 0.0
+
+            extra = period_abonos.get(period, 0.0)
+            principal_with_extra = min(principal + extra, balance)
+            applied_extra = max(principal_with_extra - principal, 0.0)
+            balance = max(balance - principal_with_extra, 0.0)
+            if strategy == "reduce_payment" and applied_extra > 0 and balance > 0:
+                remaining = term - period
+                if remaining > 0:
+                    if monthly_rate > 0:
+                        c = (1 + monthly_rate) ** remaining
+                        if c - 1 != 0:
+                            current_installment = balance * monthly_rate * c / (c - 1)
+                        else:
+                            current_installment = balance / remaining
+                    else:
+                        current_installment = balance / remaining
+            schedule.append(round(payment, 2))
+        return schedule
+
+    def _sync_auto_cash_flow_entries(self, debts: list) -> dict:
+        cash_flow_root = FINANCE_DATA_ROOT / "cash_flow"
+        desired: dict = {}
+        all_abonos = self._collect_debt_abonos()
+
+        for debt in debts:
+            if not isinstance(debt, dict):
+                continue
+            link = debt.get("cash_flow_link")
+            if not isinstance(link, dict):
+                continue
+            description = str(link.get("description", "")).strip()
+            if not description:
+                continue
+
+            start_year_str = str(link.get("start_year", "")).strip()
+            start_month_folder = str(link.get("start_month", "")).strip().lower()
+            try:
+                start_year = int(start_year_str)
+            except ValueError:
+                continue
+            if start_month_folder not in MONTH_FOLDERS:
+                continue
+            start_month_idx = MONTH_FOLDERS.index(start_month_folder)
+
+            try:
+                term = self._to_bounded_int(debt.get("term_months", 1), minimum=1, maximum=600)
+            except ValueError:
+                continue
+            debt_id = str(debt.get("id", "")).strip()
+            abono_bucket = all_abonos.get(debt_id, {})
+            schedule_amounts = self._compute_debt_schedule_amounts(debt, abono_bucket)
+            if not schedule_amounts:
+                continue
+
+            for period_index in range(term):
+                if period_index >= len(schedule_amounts):
+                    break
+                amount = schedule_amounts[period_index]
+                if amount <= 0:
+                    continue
+                absolute_month = start_month_idx + period_index
+                year = start_year + (absolute_month // 12)
+                month_idx = absolute_month % 12
+                month_folder = MONTH_FOLDERS[month_idx]
+                key = (str(year), month_folder, description)
+                slot = desired.setdefault(key, {"amount": 0.0, "debt_ids": []})
+                slot["amount"] += amount
+                if debt_id and debt_id not in slot["debt_ids"]:
+                    slot["debt_ids"].append(debt_id)
+
+        created = 0
+        updated = 0
+        removed = 0
+
+        affected_year_months: set[tuple[str, str]] = set()
+        for key in desired.keys():
+            affected_year_months.add((key[0], key[1]))
+
+        if cash_flow_root.exists():
+            for year_dir in cash_flow_root.iterdir():
+                if not year_dir.is_dir():
+                    continue
+                year_name = year_dir.name
+                outcomes_dir = year_dir / "outcomes"
+                if not outcomes_dir.is_dir():
+                    continue
+                for month_folder in MONTH_FOLDERS:
+                    month_path = outcomes_dir / f"{month_folder}.json"
+                    if month_path.exists():
+                        affected_year_months.add((year_name, month_folder))
+
+        for (year, month_folder) in sorted(affected_year_months):
+            outcomes_dir = FINANCE_DATA_ROOT / "cash_flow" / year / "outcomes"
+            if not outcomes_dir.is_dir():
+                continue
+            month_path = outcomes_dir / f"{month_folder}.json"
+            if not month_path.exists():
+                continue
+
+            try:
+                document = json.loads(month_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            entries = document.get("entries")
+            if not isinstance(entries, list):
+                entries = []
+
+            new_entries = []
+            keys_handled: set[tuple[str, str, str]] = set()
+            timestamp = utc_now_iso()
+
+            manual_descriptions: set[str] = set()
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                if str(entry.get("type", "")) != "debts":
+                    continue
+                if entry.get("auto_generated") is True:
+                    continue
+                desc = str(entry.get("description", "")).strip()
+                if desc:
+                    manual_descriptions.add(desc)
+
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    new_entries.append(entry)
+                    continue
+                if entry.get("auto_generated") is True and str(entry.get("type", "")) == "debts":
+                    desc = str(entry.get("description", ""))
+                    key = (year, month_folder, desc)
+                    if desc in manual_descriptions:
+                        removed += 1
+                        continue
+                    if key in desired:
+                        slot = desired[key]
+                        new_amount = round(slot["amount"], 2)
+                        if new_amount > 0:
+                            existing_category = str(entry.get("category", "")).strip()
+                            needs_category_backfill = not existing_category
+                            if (
+                                entry.get("amount_cop") != new_amount
+                                or entry.get("linked_debts") != slot["debt_ids"]
+                                or needs_category_backfill
+                            ):
+                                entry["amount_cop"] = new_amount
+                                entry["linked_debts"] = list(slot["debt_ids"])
+                                if needs_category_backfill:
+                                    entry["category"] = "Debt"
+                                entry["updated_at"] = timestamp
+                                updated += 1
+                            new_entries.append(entry)
+                            keys_handled.add(key)
+                            continue
+                    removed += 1
+                    continue
+                new_entries.append(entry)
+
+            for key, slot in desired.items():
+                if key[0] != year or key[1] != month_folder:
+                    continue
+                if key in keys_handled:
+                    continue
+                if key[2] in manual_descriptions:
+                    continue
+                amount = round(slot["amount"], 2)
+                if amount <= 0:
+                    continue
+                new_entries.append({
+                    "description": key[2],
+                    "category": "Debt",
+                    "type": "debts",
+                    "amount_cop": amount,
+                    "auto_generated": True,
+                    "linked_debts": list(slot["debt_ids"]),
+                    "paid": False,
+                    "created_at": timestamp,
+                    "updated_at": timestamp,
+                    "history": [],
+                })
+                created += 1
+
+            document["entries"] = new_entries
+            self._write_document(month_path, document)
+
+        return {"created": created, "updated": updated, "removed": removed}
+
+    def _handle_create_debt(self) -> None:
+        payload = self._read_json_body()
+        relative_path = payload.get("path", "finance/data/debts/debts.json")
+        debt_payload = payload["debt"]
+        if not isinstance(debt_payload, dict):
+            raise ValueError("Missing debt payload")
+
+        document, debts, target_path = self._load_debts(relative_path, create_if_missing=True)
+        existing_ids = {
+            str(debt.get("id"))
+            for debt in debts
+            if isinstance(debt, dict) and debt.get("id") is not None
+        }
+        new_debt = self._normalize_new_debt(debt_payload, existing_ids)
+        debts.append(new_debt)
+        self._write_document(target_path, document)
+        sync_report = self._safe_sync_auto_cash_flow_entries(debts)
+
+        self._send_json(
+            HTTPStatus.CREATED,
+            {
+                "ok": True,
+                "path": relative_path,
+                "debt_id": new_debt["id"],
+                "debt_index": len(debts) - 1,
+                "cash_flow_sync": sync_report,
+            },
+        )
+
     def _read_json_body(self) -> dict:
         content_length = int(self.headers.get("Content-Length", "0"))
         raw_body = self.rfile.read(content_length)
         return json.loads(raw_body.decode("utf-8"))
+
+    def _load_debts(self, relative_path: str, create_if_missing: bool = False) -> tuple[dict, list, Path]:
+        target_path = self._resolve_data_path(relative_path)
+        if create_if_missing and not target_path.exists():
+            document = {"debts": []}
+        else:
+            document = json.loads(target_path.read_text(encoding="utf-8"))
+        debts = document.get("debts")
+        if not isinstance(debts, list):
+            raise ValueError("Invalid JSON shape: expected 'debts' list")
+        return document, debts, target_path
 
     def _load_entries(self, relative_path: str, create_if_missing: bool = False) -> tuple[dict, list, Path]:
         target_path = self._resolve_data_path(relative_path)
@@ -533,6 +1098,33 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
 
         return month_entry["entries"]
 
+    def _is_auto_managed_entry(self, entry: dict) -> bool:
+        return isinstance(entry, dict) and entry.get("auto_generated") is True
+
+    def _entry_affects_debt_sync(self, entry: dict) -> bool:
+        if not isinstance(entry, dict):
+            return False
+        if entry.get("auto_generated") is True:
+            return True
+        if entry.get("extra_payment") is True:
+            return True
+        linked = entry.get("linked_debts")
+        if isinstance(linked, list) and any(str(value).strip() for value in linked):
+            return True
+        category = str(entry.get("category", "")).strip().lower()
+        if category in ("abono", "abonos"):
+            return True
+        return False
+
+    def _maybe_sync_after_entry_mutation(self, *entries: dict) -> None:
+        if not any(self._entry_affects_debt_sync(entry) for entry in entries if entry):
+            return
+        try:
+            _, debts, _ = self._load_debts("finance/data/debts/debts.json")
+        except (OSError, json.JSONDecodeError, ValueError, IndexError):
+            return
+        self._safe_sync_auto_cash_flow_entries(debts)
+
     def _ensure_entry_audit_fields(self, entry: dict) -> None:
         timestamp = utc_now_iso()
         entry.setdefault("created_at", timestamp)
@@ -571,6 +1163,16 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             if not (amount == amount and abs(amount) != float("inf")):
                 raise ValueError("Invalid amount_cop")
             normalized["amount_cop"] = amount
+        if "linked_debts" in updates:
+            raw = updates["linked_debts"]
+            if raw is None:
+                normalized["linked_debts"] = []
+            elif isinstance(raw, list):
+                normalized["linked_debts"] = [
+                    str(value).strip() for value in raw if str(value).strip()
+                ]
+            else:
+                raise ValueError("Invalid linked_debts")
 
         return normalized
 
@@ -592,6 +1194,179 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
 
         return normalized
 
+    def _normalize_debt_updates(self, updates: dict) -> dict:
+        allowed_fields = {
+            "capital",
+            "initial_investment",
+            "paid_installments",
+            "term_months",
+            "annual_interest_rate",
+            "statement_payment",
+            "insurance",
+            "other_charges",
+            "cash_flow_link",
+            "abono_strategy",
+        }
+        normalized = {}
+
+        for field, value in updates.items():
+            if field not in allowed_fields:
+                raise ValueError(f"Invalid debt field: {field}")
+
+            if field in {"paid_installments", "term_months"}:
+                normalized[field] = self._to_bounded_int(
+                    value,
+                    minimum=1 if field == "term_months" else 0,
+                    maximum=600 if field == "term_months" else 600,
+                )
+            elif field == "annual_interest_rate":
+                normalized[field] = self._normalize_debt_rate(value)
+            elif field == "cash_flow_link":
+                normalized[field] = (
+                    self._normalize_debt_cash_flow_link(value) if value else None
+                )
+            elif field == "abono_strategy":
+                normalized[field] = (
+                    "reduce_payment" if str(value).strip().lower() == "reduce_payment" else "reduce_term"
+                )
+            else:
+                normalized[field] = self._to_non_negative_amount(value)
+
+        return normalized
+
+    def _normalize_debt_entry(self, debt: dict) -> None:
+        capital = self._to_non_negative_amount(debt.get("capital", 0))
+        term_months = self._to_bounded_int(debt.get("term_months", 1), minimum=1, maximum=600)
+        paid_installments = self._to_bounded_int(
+            debt.get("paid_installments", 0),
+            minimum=0,
+            maximum=term_months,
+        )
+
+        debt["capital"] = capital
+        debt["initial_investment"] = min(
+            self._to_non_negative_amount(debt.get("initial_investment", 0)),
+            capital,
+        )
+        debt["paid_installments"] = paid_installments
+        debt["term_months"] = term_months
+        debt["annual_interest_rate"] = self._normalize_debt_rate(debt.get("annual_interest_rate", 0))
+
+        for field in ("statement_payment", "insurance", "other_charges"):
+            if field in debt:
+                debt[field] = self._to_non_negative_amount(debt[field])
+
+        if "cash_flow_link" in debt:
+            if debt["cash_flow_link"]:
+                debt["cash_flow_link"] = self._normalize_debt_cash_flow_link(debt["cash_flow_link"])
+            else:
+                debt.pop("cash_flow_link", None)
+
+        if "abono_strategy" in debt:
+            debt["abono_strategy"] = (
+                "reduce_payment"
+                if str(debt["abono_strategy"]).strip().lower() == "reduce_payment"
+                else "reduce_term"
+            )
+
+    def _normalize_debt_cash_flow_link(self, value: object) -> dict:
+        if not isinstance(value, dict):
+            raise ValueError("Invalid cash_flow_link")
+
+        description = str(value.get("description", "")).strip()
+
+        entry_type = str(value.get("type", "debts")).strip().lower()
+        if entry_type not in ALLOWED_TYPES:
+            raise ValueError("Invalid cash flow movement type")
+
+        start_year = str(value.get("start_year", value.get("startYear", ""))).strip()
+        start_month = str(value.get("start_month", value.get("startMonth", ""))).strip()
+        if not start_year:
+            raise ValueError("Missing cash flow movement year")
+        if not start_month:
+            raise ValueError("Missing cash flow movement month")
+
+        return {
+            "description": description,
+            "type": entry_type,
+            "start_year": start_year,
+            "start_month": start_month,
+        }
+
+    def _normalize_new_debt(self, payload: dict, existing_ids: set[str]) -> dict:
+        name = self._normalize_debt_name(payload.get("name"))
+        capital = self._to_non_negative_amount(payload.get("capital", 0))
+        term_months = self._to_bounded_int(payload.get("term_months", 1), minimum=1, maximum=600)
+        debt = {
+            "id": self._unique_debt_id(name["es"] or name["en"], existing_ids),
+            "name": name,
+            "capital": capital,
+            "initial_investment": min(
+                self._to_non_negative_amount(payload.get("initial_investment", 0)),
+                capital,
+            ),
+            "paid_installments": self._to_bounded_int(
+                payload.get("paid_installments", 0),
+                minimum=0,
+                maximum=term_months,
+            ),
+            "term_months": term_months,
+            "annual_interest_rate": self._normalize_debt_rate(payload.get("annual_interest_rate", 0)),
+        }
+
+        for field in ("statement_payment", "insurance", "other_charges"):
+            if field in payload:
+                debt[field] = self._to_non_negative_amount(payload[field])
+
+        if "cash_flow_link" in payload and payload["cash_flow_link"]:
+            debt["cash_flow_link"] = self._normalize_debt_cash_flow_link(payload["cash_flow_link"])
+
+        strategy_raw = str(payload.get("abono_strategy", "")).strip().lower()
+        debt["abono_strategy"] = "reduce_payment" if strategy_raw == "reduce_payment" else "reduce_term"
+
+        return debt
+
+    def _normalize_debt_name(self, value: object) -> dict:
+        if isinstance(value, dict):
+            es = str(value.get("es") or value.get("en") or "").strip()
+            en = str(value.get("en") or value.get("es") or "").strip()
+        else:
+            es = str(value or "").strip()
+            en = es
+
+        if not es and not en:
+            raise ValueError("Missing debt name")
+
+        return {
+            "es": es or en,
+            "en": en or es,
+        }
+
+    def _unique_debt_id(self, value: str, existing_ids: set[str]) -> str:
+        base = self._slugify(value) or "debt"
+        candidate = base
+        suffix = 2
+        while candidate in existing_ids:
+            candidate = f"{base}-{suffix}"
+            suffix += 1
+        existing_ids.add(candidate)
+        return candidate
+
+    @staticmethod
+    def _slugify(value: str) -> str:
+        ascii_value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+        normalized = []
+        previous_was_separator = False
+        for character in ascii_value.lower():
+            if character.isalnum():
+                normalized.append(character)
+                previous_was_separator = False
+            elif not previous_was_separator:
+                normalized.append("-")
+                previous_was_separator = True
+
+        return "".join(normalized).strip("-")
+
     def _normalize_new_entry(self, payload: dict) -> dict:
         description = str(payload.get("description", "")).strip()
         category = str(payload.get("category", "")).strip()
@@ -599,12 +1374,23 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         if not (amount == amount and abs(amount) != float("inf")):
             raise ValueError("Invalid amount_cop")
 
-        return {
+        entry = {
             "paid": bool(payload["paid"] if "paid" in payload else payload.get("active", True)),
             "description": description,
             "category": category,
             "amount_cop": amount,
         }
+
+        linked_debts = payload.get("linked_debts")
+        if isinstance(linked_debts, list):
+            cleaned = [str(value).strip() for value in linked_debts if str(value).strip()]
+            if cleaned:
+                entry["linked_debts"] = cleaned
+
+        if payload.get("extra_payment") is True:
+            entry["extra_payment"] = True
+
+        return entry
 
     def _normalize_new_income_entry(self, payload: dict) -> dict:
         description = str(payload.get("description", "")).strip() or "Income"
@@ -690,6 +1476,32 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
 
         return changes
 
+    def _build_debt_change_map(self, previous_debt: dict, next_debt: dict) -> dict:
+        changes = {}
+        fields = {
+            "capital",
+            "initial_investment",
+            "paid_installments",
+            "term_months",
+            "annual_interest_rate",
+            "statement_payment",
+            "insurance",
+            "other_charges",
+            "cash_flow_link",
+            "abono_strategy",
+        }
+
+        for field in fields:
+            previous_value = previous_debt.get(field)
+            next_value = next_debt.get(field)
+            if previous_value != next_value:
+                changes[field] = {
+                    "from": previous_value,
+                    "to": next_value,
+                }
+
+        return changes
+
     def _apply_audit_update(self, entry: dict, changes: dict) -> None:
         timestamp = utc_now_iso()
         history = entry.get("history")
@@ -737,6 +1549,37 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         if not (amount == amount and abs(amount) != float("inf")):
             raise ValueError("Invalid numeric value")
         return amount
+
+    def _to_non_negative_amount(self, value: object) -> float | int:
+        amount = round(self._to_finite_float(value), 2)
+        if amount < 0:
+            raise ValueError("Invalid negative amount")
+        return int(amount) if amount.is_integer() else amount
+
+    def _to_bounded_int(self, value: object, *, minimum: int, maximum: int) -> int:
+        amount = round(self._to_finite_float(value))
+        return min(max(amount, minimum), maximum)
+
+    def _normalize_debt_rate(self, value: object) -> str:
+        raw_value = str(value).replace(",", ".").strip()
+        if not raw_value:
+            return "0"
+
+        normalized_value = "".join(character for character in raw_value if character.isdigit() or character == ".")
+        parts = normalized_value.split(".")
+        integer_part = parts[0] if parts else ""
+        decimal_part = "".join(parts[1:])
+        separator = "." if len(parts) > 1 else ""
+        if not integer_part and not decimal_part:
+            return "0"
+
+        candidate = f"{integer_part or '0'}{separator}{decimal_part}" if separator else integer_part
+        rate = self._to_finite_float(candidate)
+        if rate < 0 or rate > 200:
+            rate = min(max(rate, 0), 200)
+            return str(int(rate)) if rate.is_integer() else str(rate)
+
+        return candidate
 
     def _round_income_amount(self, value: float) -> float:
         return round(value, 3)

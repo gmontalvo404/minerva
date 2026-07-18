@@ -17,94 +17,149 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Marcellus&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Forum&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="app-shell">
+      <header class="hero hero--section">
+        <div class="hero__section-brand">
+          <h1 data-i18n="app_header_title"></h1>
+        </div>
+        <div class="hero__section">
+          <div class="view-switch view-switch--compact app-mode-switch">
+            <button
+              class="view-button"
+              type="button"
+              data-app-mode="cashflow"
+              data-i18n="app_section_cash_flow"
+            ></button>
+            <button
+              class="view-button"
+              type="button"
+              data-app-mode="debts"
+              data-i18n="app_section_debts"
+            ></button>
+            <button
+              class="view-button"
+              type="button"
+              data-app-mode="credit"
+              data-i18n="app_section_credit"
+            ></button>
+            <button
+              class="view-button"
+              type="button"
+              data-app-mode="nutrition"
+              data-i18n="app_section_nutrition"
+            ></button>
+          </div>
+        </div>
+        <div class="hero__tools">
+          <div class="view-switch view-switch--compact language-switch">
+            <button
+              id="language-en"
+              class="view-button"
+              type="button"
+              data-language="en"
+            >
+              EN
+            </button>
+            <button
+              id="language-es"
+              class="view-button"
+              type="button"
+              data-language="es"
+            >
+              ES
+            </button>
+          </div>
+
+          <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">
+            <span class="theme-toggle__track" aria-hidden="true">
+              <span class="theme-toggle__sun-glow"></span>
+              <span class="theme-toggle__band theme-toggle__band--1"></span>
+              <span class="theme-toggle__band theme-toggle__band--2"></span>
+              <span class="theme-toggle__cloud theme-toggle__cloud--small"></span>
+              <span class="theme-toggle__cloud theme-toggle__cloud--large"></span>
+              <span class="theme-toggle__star theme-toggle__star--1"></span>
+              <span class="theme-toggle__star theme-toggle__star--2"></span>
+              <span class="theme-toggle__star theme-toggle__star--3"></span>
+              <span class="theme-toggle__star theme-toggle__star--4"></span>
+              <span class="theme-toggle__thumb"></span>
+            </span>
+            <span id="theme-toggle-text" class="visually-hidden"></span>
+          </button>
+        </div>
+      </header>
+
       <aside class="control-sidebar">
         <div class="control-sidebar__inner">
-          <div class="control-sidebar__controls">
-            <div class="field">
-              <span class="field__label" data-i18n="language_label"></span>
-              <div class="view-switch view-switch--compact language-switch">
-                <button
-                  id="language-en"
-                  class="view-button"
-                  type="button"
-                  data-language="en"
-                >
-                  EN
-                </button>
-                <button
-                  id="language-es"
-                  class="view-button"
-                  type="button"
-                  data-language="es"
-                >
-                  ES
-                </button>
-              </div>
+          <div id="cash-flow-controls" class="control-sidebar__cash-flow">
+            <div class="control-sidebar__controls">
+              <label class="field" for="year-select">
+                <span class="field__label" data-i18n="year_label"></span>
+                <div class="select-shell">
+                  <select id="year-select" class="select"></select>
+                </div>
+              </label>
             </div>
 
-            <label class="field" for="year-select">
-              <span class="field__label" data-i18n="year_label"></span>
-              <div class="select-shell">
-                <select id="year-select" class="select"></select>
-              </div>
-            </label>
-
-            <div class="field">
-              <span class="field__label" data-i18n="theme_label"></span>
-              <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">
-                <span class="theme-toggle__track" aria-hidden="true">
-                  <span class="theme-toggle__sun-glow"></span>
-                  <span class="theme-toggle__band theme-toggle__band--1"></span>
-                  <span class="theme-toggle__band theme-toggle__band--2"></span>
-                  <span class="theme-toggle__cloud theme-toggle__cloud--small"></span>
-                  <span class="theme-toggle__cloud theme-toggle__cloud--large"></span>
-                  <span class="theme-toggle__star theme-toggle__star--1"></span>
-                  <span class="theme-toggle__star theme-toggle__star--2"></span>
-                  <span class="theme-toggle__star theme-toggle__star--3"></span>
-                  <span class="theme-toggle__star theme-toggle__star--4"></span>
-                  <span class="theme-toggle__thumb"></span>
-                </span>
-                <span id="theme-toggle-text" class="visually-hidden"></span>
-              </button>
+            <div class="field control-sidebar__view">
+              <span class="field__label" data-i18n="view_label"></span>
+              <section id="sidebar-months" class="control-sidebar__months">
+                <button
+                  id="view-annual-button"
+                  class="month-button control-sidebar__annual-button"
+                  type="button"
+                  data-view-mode="annual"
+                  data-i18n="view_annual"
+                ></button>
+                <div id="sidebar-month-nav" class="month-nav month-nav--sidebar"></div>
+              </section>
             </div>
-
           </div>
 
-          <div class="field">
-            <span class="field__label" data-i18n="view_label"></span>
-            <section id="sidebar-months" class="control-sidebar__months">
-              <button
-                id="view-annual-button"
-                class="month-button control-sidebar__annual-button"
-                type="button"
-                data-view-mode="annual"
-                data-i18n="view_annual"
-              ></button>
-              <div id="sidebar-month-nav" class="month-nav month-nav--sidebar"></div>
-            </section>
+          <div id="debt-view-controls" class="control-sidebar__debt-view" hidden>
+            <div class="field control-sidebar__view">
+              <span class="field__label" data-i18n="view_label"></span>
+              <section class="control-sidebar__months">
+                <button
+                  class="month-button control-sidebar__annual-button"
+                  type="button"
+                  data-debt-view="active"
+                  data-i18n="debt_view_active"
+                ></button>
+                <button
+                  class="month-button control-sidebar__annual-button"
+                  type="button"
+                  data-debt-view="canceled"
+                  data-i18n="debt_view_canceled"
+                ></button>
+              </section>
+            </div>
           </div>
 
+          <div id="credit-view-controls" class="control-sidebar__credit-view" hidden>
+            <div class="field control-sidebar__view">
+              <span class="field__label" data-i18n="view_label"></span>
+              <section class="control-sidebar__months">
+                <button
+                  class="month-button control-sidebar__annual-button is-active"
+                  type="button"
+                  aria-pressed="true"
+                  aria-disabled="true"
+                  tabindex="-1"
+                  data-i18n="app_section_credit"
+                ></button>
+              </section>
+            </div>
+          </div>
         </div>
       </aside>
 
       <div class="content-shell">
-        <header class="hero">
-          <div class="hero__copy">
-            <div class="hero__content">
-              <span id="hero-chip" class="hero__chip"></span>
-              <h1 id="hero-title" data-i18n="hero_title"></h1>
-              <p id="hero-lede" class="hero__lede" data-i18n="hero_lede"></p>
-            </div>
-          </div>
-        </header>
-
         <main class="layout">
           <section id="annual-panel" class="panel">
           <div class="section-head">
@@ -293,6 +348,122 @@
             </div>
           </article>
           </section>
+
+          <section id="debts-panel" class="panel" hidden>
+            <div class="section-head">
+              <div>
+                <p class="section-head__eyebrow" data-i18n="debts_section_eyebrow"></p>
+                <h2 data-i18n="debts_title"></h2>
+              </div>
+              <p class="section-head__note" data-i18n="debts_note"></p>
+            </div>
+
+            <div id="debt-kpis" class="kpi-grid"></div>
+
+            <article class="card">
+              <div class="card__head card__head--detail">
+                <div>
+                  <p class="card__eyebrow" data-i18n="debts_table_eyebrow"></p>
+                  <h3 id="debts-table-title" data-i18n="debts_table_title"></h3>
+                </div>
+                <button
+                  id="add-debt-button"
+                  class="button button--compact button--entry-add"
+                  type="button"
+                  data-i18n="add_debt_button"
+                ></button>
+              </div>
+              <div class="table-scroll">
+                <table id="debts-table" class="data-table data-table--debts"></table>
+              </div>
+            </article>
+          </section>
+
+          <section id="credit-simulator-panel" class="panel" hidden>
+            <div class="section-head">
+              <div>
+                <p class="section-head__eyebrow" data-i18n="credit_section_eyebrow"></p>
+                <h2 data-i18n="credit_title"></h2>
+              </div>
+              <p class="section-head__note" data-i18n="credit_note"></p>
+            </div>
+
+            <div class="chart-grid credit-simulator-layout">
+              <article class="card credit-simulator-input-card">
+                <div class="card__head">
+                  <div>
+                    <p class="card__eyebrow" data-i18n="credit_form_eyebrow"></p>
+                    <h3 data-i18n="credit_form_title"></h3>
+                  </div>
+                </div>
+                <form id="credit-simulator-form" class="credit-simulator-form">
+                  <label class="field" for="credit-simulator-capital">
+                    <span class="field__label" data-i18n="create_debt_capital"></span>
+                    <input id="credit-simulator-capital" name="capital" class="entry-input entry-input--amount" type="text" inputmode="decimal" value="20000000" />
+                  </label>
+
+                  <label class="field" for="credit-simulator-initial-investment">
+                    <span class="field__label" data-i18n="create_debt_initial_investment"></span>
+                    <input id="credit-simulator-initial-investment" name="initial_investment" class="entry-input entry-input--amount" type="text" inputmode="decimal" value="0" />
+                  </label>
+
+                  <label class="field" for="credit-simulator-annual-interest">
+                    <span class="field__label" data-i18n="create_debt_annual_interest"></span>
+                    <input id="credit-simulator-annual-interest" name="annual_interest_rate" class="entry-input entry-input--amount" type="text" inputmode="decimal" value="20" />
+                  </label>
+
+                  <label class="field" for="credit-simulator-term-months">
+                    <span class="field__label" data-i18n="create_debt_term_months"></span>
+                    <input id="credit-simulator-term-months" name="term_months" class="entry-input entry-input--amount entry-input--no-spin" type="number" min="1" max="600" step="1" inputmode="numeric" value="12" />
+                  </label>
+
+                  <label class="field" for="credit-simulator-insurance">
+                    <span class="field__label" data-i18n="create_debt_insurance"></span>
+                    <input id="credit-simulator-insurance" name="insurance" class="entry-input entry-input--amount" type="text" inputmode="decimal" value="0" />
+                  </label>
+
+                  <label class="field" for="credit-simulator-other-charges">
+                    <span class="field__label" data-i18n="create_debt_other_charges"></span>
+                    <input id="credit-simulator-other-charges" name="other_charges" class="entry-input entry-input--amount" type="text" inputmode="decimal" value="0" />
+                  </label>
+                </form>
+              </article>
+
+              <article class="card credit-simulator-summary-card">
+                <div class="card__head card__head--detail">
+                  <div>
+                    <p class="card__eyebrow" data-i18n="credit_summary_eyebrow"></p>
+                    <h3 data-i18n="credit_summary_title"></h3>
+                  </div>
+                  <div id="credit-simulator-currency" class="debt-detail-dialog__currency"></div>
+                </div>
+                <div id="credit-simulator-summary"></div>
+              </article>
+            </div>
+
+            <article class="card">
+              <div class="card__head card__head--detail">
+                <div>
+                  <p class="card__eyebrow" data-i18n="credit_schedule_eyebrow"></p>
+                  <h3 data-i18n="credit_schedule_title"></h3>
+                </div>
+              </div>
+              <div class="table-scroll debt-detail-table-wrap credit-simulator-table-wrap">
+                <table id="credit-simulator-table" class="data-table data-table--debt-detail"></table>
+              </div>
+            </article>
+          </section>
+
+          <section id="nutrition-panel" class="panel" hidden>
+            <div class="section-head">
+              <div>
+                <p class="section-head__eyebrow" data-i18n="nutrition_section_eyebrow"></p>
+                <h2 data-i18n="nutrition_title"></h2>
+              </div>
+              <p class="section-head__note" data-i18n="nutrition_note"></p>
+            </div>
+            <div id="nutrition-content" class="nutrition-layout"></div>
+          </section>
         </main>
       </div>
     </div>
@@ -303,6 +474,238 @@
         <p id="empty-state-message"></p>
       </div>
     </template>
+
+    <dialog id="debt-detail-dialog" class="history-dialog debt-detail-dialog">
+      <div class="history-dialog__panel debt-detail-dialog__panel">
+        <div class="history-dialog__head">
+          <div>
+            <p id="debt-detail-dialog-eyebrow" class="card__eyebrow"></p>
+            <h3 id="debt-detail-dialog-title"></h3>
+          </div>
+          <div class="debt-detail-dialog__actions">
+            <div id="debt-detail-dialog-currency" class="debt-detail-dialog__currency"></div>
+            <button id="debt-detail-dialog-close" class="history-dialog__close" type="button">×</button>
+          </div>
+        </div>
+        <div id="debt-detail-dialog-body" class="history-dialog__body debt-detail-dialog__body"></div>
+      </div>
+    </dialog>
+
+    <dialog id="debt-link-dialog" class="history-dialog create-entry-dialog">
+      <form id="debt-link-form" class="history-dialog__panel movement-dialog__panel">
+        <div class="history-dialog__head">
+          <div>
+            <p class="card__eyebrow" data-i18n="debt_link_eyebrow"></p>
+            <h3 data-i18n="debt_link_title"></h3>
+          </div>
+          <button id="debt-link-dialog-close" class="history-dialog__close" type="button">×</button>
+        </div>
+
+        <input id="debt-link-id" name="debt_id" type="hidden" />
+
+        <section id="debt-link-current" class="debt-link-current" hidden>
+          <div class="debt-link-current__head">
+            <div>
+              <p class="card__eyebrow" data-i18n="debt_link_current_eyebrow"></p>
+              <h4 id="debt-link-current-description" class="debt-link-current__description"></h4>
+            </div>
+            <button
+              id="debt-link-clear"
+              class="entry-history-button debt-link-current__clear"
+              type="button"
+              data-i18n="debt_link_clear"
+            ></button>
+          </div>
+          <ul id="debt-link-current-list" class="debt-link-current__list"></ul>
+          <p id="debt-link-current-empty" class="debt-link-current__empty" hidden data-i18n="debt_link_current_empty"></p>
+        </section>
+
+        <div class="movement-form__grid">
+          <label class="field" for="debt-link-year">
+            <span class="field__label" data-i18n="debt_link_year"></span>
+            <div class="entry-select-shell">
+              <select
+                id="debt-link-year"
+                name="year"
+                class="entry-select entry-select--pretty"
+                required
+              ></select>
+            </div>
+          </label>
+
+          <label class="field" for="debt-link-month">
+            <span class="field__label" data-i18n="debt_link_month"></span>
+            <div class="entry-select-shell">
+              <select
+                id="debt-link-month"
+                name="month"
+                class="entry-select entry-select--pretty"
+                required
+              ></select>
+            </div>
+          </label>
+
+          <label class="field movement-form__full" for="debt-link-name">
+            <span class="field__label" data-i18n="debt_link_name"></span>
+            <input
+              id="debt-link-name"
+              name="description"
+              class="entry-input"
+              type="text"
+              autocomplete="off"
+              maxlength="80"
+            />
+            <span class="field__hint" data-i18n="debt_link_name_hint"></span>
+          </label>
+
+          <label class="field movement-form__full" for="debt-link-abono-strategy">
+            <span class="field__label" data-i18n="debt_abono_strategy_label"></span>
+            <div class="entry-select-shell">
+              <select
+                id="debt-link-abono-strategy"
+                name="abono_strategy"
+                class="entry-select entry-select--pretty"
+              >
+                <option value="reduce_term" data-i18n="debt_abono_strategy_term"></option>
+                <option value="reduce_payment" data-i18n="debt_abono_strategy_payment"></option>
+              </select>
+            </div>
+            <span class="field__hint" data-i18n="debt_abono_strategy_meta"></span>
+          </label>
+        </div>
+
+        <div class="movement-form__actions">
+          <button
+            id="debt-link-cancel"
+            class="entry-history-button movement-form__cancel"
+            type="button"
+            data-i18n="debt_link_cancel"
+          ></button>
+          <button
+            id="debt-link-submit"
+            class="button button--compact button--entry-add"
+            type="submit"
+            data-i18n="debt_link_submit"
+          ></button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="create-debt-dialog" class="history-dialog create-entry-dialog">
+      <form id="create-debt-form" class="history-dialog__panel movement-dialog__panel">
+        <div class="history-dialog__head">
+          <div>
+            <p class="card__eyebrow" data-i18n="create_debt_eyebrow"></p>
+            <h3 data-i18n="create_debt_title"></h3>
+          </div>
+          <button id="create-debt-dialog-close" class="history-dialog__close" type="button">×</button>
+        </div>
+
+        <div class="movement-form__grid">
+          <label class="field" for="create-debt-name">
+            <span class="field__label" data-i18n="create_debt_name"></span>
+            <input id="create-debt-name" name="name" class="entry-input entry-input--no-spin" type="text" required />
+          </label>
+
+          <label class="field" for="create-debt-capital">
+            <span class="field__label" data-i18n="create_debt_capital"></span>
+            <input id="create-debt-capital" name="capital" class="entry-input entry-input--amount entry-input--no-spin" type="number" min="0" step="0.01" inputmode="decimal" required />
+          </label>
+
+          <label class="field" for="create-debt-initial-investment">
+            <span class="field__label" data-i18n="create_debt_initial_investment"></span>
+            <input id="create-debt-initial-investment" name="initial_investment" class="entry-input entry-input--amount entry-input--no-spin" type="number" min="0" step="0.01" inputmode="decimal" value="0" />
+          </label>
+
+          <label class="field" for="create-debt-term-months">
+            <span class="field__label" data-i18n="create_debt_term_months"></span>
+            <input id="create-debt-term-months" name="term_months" class="entry-input entry-input--no-spin" type="number" min="1" max="600" step="1" inputmode="numeric" required />
+          </label>
+
+          <label class="field" for="create-debt-annual-interest">
+            <span class="field__label" data-i18n="create_debt_annual_interest"></span>
+            <input id="create-debt-annual-interest" name="annual_interest_rate" class="entry-input entry-input--no-spin" type="text" inputmode="decimal" value="0" />
+          </label>
+
+          <label class="field" for="create-debt-insurance">
+            <span class="field__label" data-i18n="create_debt_insurance"></span>
+            <input id="create-debt-insurance" name="insurance" class="entry-input entry-input--amount entry-input--no-spin" type="number" min="0" step="0.01" inputmode="decimal" value="0" />
+          </label>
+
+          <label class="field" for="create-debt-other-charges">
+            <span class="field__label" data-i18n="create_debt_other_charges"></span>
+            <input id="create-debt-other-charges" name="other_charges" class="entry-input entry-input--amount entry-input--no-spin" type="number" min="0" step="0.01" inputmode="decimal" value="0" />
+          </label>
+
+          <label class="field" for="create-debt-link-year">
+            <span class="field__label" data-i18n="debt_link_year"></span>
+            <div class="entry-select-shell">
+              <select
+                id="create-debt-link-year"
+                name="cash_flow_link_year"
+                class="entry-select entry-select--pretty"
+                required
+              ></select>
+            </div>
+          </label>
+
+          <label class="field" for="create-debt-link-month">
+            <span class="field__label" data-i18n="debt_link_month"></span>
+            <div class="entry-select-shell">
+              <select
+                id="create-debt-link-month"
+                name="cash_flow_link_month"
+                class="entry-select entry-select--pretty"
+                required
+              ></select>
+            </div>
+          </label>
+
+          <label class="field movement-form__full" for="create-debt-link-name">
+            <span class="field__label" data-i18n="debt_link_name"></span>
+            <input
+              id="create-debt-link-name"
+              name="cash_flow_link_description"
+              class="entry-input entry-input--no-spin"
+              type="text"
+              autocomplete="off"
+              maxlength="80"
+            />
+            <span class="field__hint" data-i18n="debt_link_name_hint"></span>
+          </label>
+
+          <label class="field movement-form__full" for="create-debt-abono-strategy">
+            <span class="field__label" data-i18n="debt_abono_strategy_label"></span>
+            <div class="entry-select-shell">
+              <select
+                id="create-debt-abono-strategy"
+                name="abono_strategy"
+                class="entry-select entry-select--pretty"
+              >
+                <option value="reduce_term" data-i18n="debt_abono_strategy_term"></option>
+                <option value="reduce_payment" data-i18n="debt_abono_strategy_payment"></option>
+              </select>
+            </div>
+            <span class="field__hint" data-i18n="debt_abono_strategy_meta"></span>
+          </label>
+        </div>
+
+        <div class="movement-form__actions">
+          <button
+            id="create-debt-cancel"
+            class="entry-history-button movement-form__cancel"
+            type="button"
+            data-i18n="create_debt_cancel"
+          ></button>
+          <button
+            id="create-debt-submit"
+            class="button button--compact button--entry-add"
+            type="submit"
+            data-i18n="create_debt_submit"
+          ></button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="entry-history-dialog" class="history-dialog">
       <form method="dialog" class="history-dialog__panel">
@@ -388,6 +791,12 @@
               </span>
             </span>
           </label>
+
+          <fieldset id="create-entry-debt-section" class="field movement-form__full create-entry-debt-section" hidden>
+            <legend class="field__label" data-i18n="create_entry_debt_target"></legend>
+            <p class="field__hint" data-i18n="create_entry_debt_hint"></p>
+            <div id="create-entry-debt-list" class="create-entry-debt-list"></div>
+          </fieldset>
         </div>
 
         <div class="movement-form__actions">
@@ -402,6 +811,41 @@
             class="button button--compact button--entry-add"
             type="submit"
             data-i18n="create_entry_submit"
+          ></button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="entry-debt-link-dialog" class="history-dialog create-entry-dialog">
+      <form id="entry-debt-link-form" class="history-dialog__panel movement-dialog__panel">
+        <div class="history-dialog__head">
+          <div>
+            <p id="entry-debt-link-dialog-eyebrow" class="card__eyebrow" data-i18n="entry_debt_link_eyebrow"></p>
+            <h3 id="entry-debt-link-dialog-title" data-i18n="entry_debt_link_title"></h3>
+          </div>
+          <button id="entry-debt-link-dialog-close" class="history-dialog__close" type="button">×</button>
+        </div>
+
+        <div class="movement-form__grid">
+          <fieldset id="entry-debt-link-section" class="field movement-form__full create-entry-debt-section">
+            <legend class="field__label" data-i18n="entry_debt_link_target"></legend>
+            <p class="field__hint" data-i18n="entry_debt_link_hint"></p>
+            <div id="entry-debt-link-list" class="create-entry-debt-list"></div>
+          </fieldset>
+        </div>
+
+        <div class="movement-form__actions">
+          <button
+            id="entry-debt-link-cancel"
+            class="entry-history-button movement-form__cancel"
+            type="button"
+            data-i18n="entry_debt_link_cancel"
+          ></button>
+          <button
+            id="entry-debt-link-submit"
+            class="button button--compact button--entry-add"
+            type="submit"
+            data-i18n="entry_debt_link_submit"
           ></button>
         </div>
       </form>
