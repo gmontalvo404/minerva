@@ -156,9 +156,11 @@ const I18N = {
     nutrition_kpi_ingredients: "Ingredientes distintos",
     nutrition_shopping_title: "Lista de compras",
     nutrition_shopping_col_ingredient: "Ingrediente",
+    nutrition_shopping_col_category: "Categoría",
     nutrition_shopping_col_qty: "Cantidad",
     nutrition_shopping_col_price: "Precio unit.",
     nutrition_shopping_col_total: "Subtotal",
+    nutrition_shopping_col_store: "Dónde comprar",
     nutrition_shopping_total: "Total estimado",
     nutrition_shopping_hint: "Edita el precio unitario para ajustar el estimado.",
     nutrition_shopping_empty: "Asigna comidas al plan para ver la lista de compras.",
@@ -545,9 +547,11 @@ const I18N = {
     nutrition_kpi_ingredients: "Distinct ingredients",
     nutrition_shopping_title: "Shopping list",
     nutrition_shopping_col_ingredient: "Ingredient",
+    nutrition_shopping_col_category: "Category",
     nutrition_shopping_col_qty: "Quantity",
     nutrition_shopping_col_price: "Unit price",
     nutrition_shopping_col_total: "Subtotal",
+    nutrition_shopping_col_store: "Where to buy",
     nutrition_shopping_total: "Estimated total",
     nutrition_shopping_hint: "Edit the unit price to adjust the estimate.",
     nutrition_shopping_empty: "Assign meals to the plan to see the shopping list.",
@@ -3116,12 +3120,14 @@ function computeNutritionShoppingList(plan, ingMap) {
         id,
         name: ing ? ing.name : id,
         unit: ing ? ing.unit : "",
+        category: ing ? ing.category || "" : "",
+        store: ing ? ing.store || "" : "",
         qty,
         price,
         total: qty * price,
       };
     })
-    .sort((a, b) => b.total - a.total);
+    .sort((a, b) => a.store.localeCompare(b.store) || b.total - a.total);
 
   const total = lines.reduce((sum, line) => sum + line.total, 0);
   return { lines, total };
@@ -3233,6 +3239,7 @@ function renderNutritionWeeklyPlan(plan) {
       (line) => `
       <tr>
         <td class="nutrition-cell-strong">${escapeHtml(line.name)}</td>
+        <td class="nutrition-shop-category">${escapeHtml(line.category)}</td>
         <td>${escapeHtml(formatNutritionQty(line.qty))} ${escapeHtml(line.unit)}</td>
         <td class="nutrition-price-cell">
           <div class="nutrition-price-field">
@@ -3242,6 +3249,7 @@ function renderNutritionWeeklyPlan(plan) {
           </div>
         </td>
         <td class="nutrition-plan-total">${escapeHtml(formatCop(line.total))}</td>
+        <td class="nutrition-shop-store">${escapeHtml(line.store)}</td>
       </tr>
     `,
     )
@@ -3293,9 +3301,11 @@ function renderNutritionWeeklyPlan(plan) {
           <thead>
             <tr>
               <th>${escapeHtml(t("nutrition_shopping_col_ingredient"))}</th>
+              <th>${escapeHtml(t("nutrition_shopping_col_category"))}</th>
               <th>${escapeHtml(t("nutrition_shopping_col_qty"))}</th>
               <th>${escapeHtml(t("nutrition_shopping_col_price"))}</th>
               <th>${escapeHtml(t("nutrition_shopping_col_total"))}</th>
+              <th>${escapeHtml(t("nutrition_shopping_col_store"))}</th>
             </tr>
           </thead>
           <tbody>${shoppingRows}</tbody>

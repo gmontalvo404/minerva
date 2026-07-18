@@ -4621,9 +4621,48 @@ code {
   width: 11%;
 }
 
-.data-table--nutrition-shopping th:first-child,
-.data-table--nutrition-shopping td:first-child {
-  width: 40%;
+.data-table--nutrition-shopping th,
+.data-table--nutrition-shopping td {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.data-table--nutrition-shopping th:nth-child(1),
+.data-table--nutrition-shopping td:nth-child(1) {
+  width: 22%;
+}
+
+.data-table--nutrition-shopping th:nth-child(2),
+.data-table--nutrition-shopping td:nth-child(2) {
+  width: 14%;
+}
+
+.data-table--nutrition-shopping th:nth-child(3),
+.data-table--nutrition-shopping td:nth-child(3) {
+  width: 13%;
+}
+
+.data-table--nutrition-shopping th:nth-child(4),
+.data-table--nutrition-shopping td:nth-child(4) {
+  width: 18%;
+}
+
+.data-table--nutrition-shopping th:nth-child(5),
+.data-table--nutrition-shopping td:nth-child(5) {
+  width: 15%;
+}
+
+.data-table--nutrition-shopping th:nth-child(6),
+.data-table--nutrition-shopping td:nth-child(6) {
+  width: 18%;
+}
+
+.nutrition-shop-category,
+.nutrition-shop-store {
+  color: var(--muted);
+  font-size: 0.82rem;
 }
 
 .data-table--nutrition-plan td.nutrition-day-cell {
