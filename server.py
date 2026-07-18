@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from copy import deepcopy
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -1602,10 +1604,40 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
 
+def open_in_browser(url: str) -> None:
+    """Open the app in Google Chrome when available, else the default browser.
+
+    Chrome renders this dashboard noticeably more smoothly than Firefox, so we
+    prefer it. If Chrome is not installed we fall back to the system default.
+    """
+    # Chrome is often registered with webbrowser under one of these names.
+    for name in ("chrome", "google-chrome", "chromium", "chromium-browser"):
+        try:
+            webbrowser.get(name).open(url, new=2, autoraise=True)
+            return
+        except webbrowser.Error:
+            continue
+
+    # On macOS Chrome is usually not registered with webbrowser; use `open -a`.
+    if sys.platform == "darwin":
+        try:
+            subprocess.Popen(
+                ["open", "-a", "Google Chrome", url],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return
+        except OSError:
+            pass
+
+    # Fall back to the default browser.
+    webbrowser.open(url, new=2, autoraise=True)
+
+
 def main() -> None:
     server = ThreadingHTTPServer((HOST, PORT), FinanceDataHandler)
     print(f"Serving {ROOT} at http://{HOST}:{PORT}")
-    webbrowser.open(f"http://{HOST}:{PORT}", new=2, autoraise=True)
+    open_in_browser(f"http://{HOST}:{PORT}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
