@@ -3197,14 +3197,19 @@ function renderNutritionWeeklyPlan(plan) {
   const planRows = week
     .map((day, dayIndex) => {
       let dayTotal = 0;
-      const cells = NUTRITION_MEAL_TYPES.map((type) => {
+      const cells = ["breakfast", "lunch", "snack", "dinner"].map((type) => {
         const id = day[type] || "";
         dayTotal += costOf(type, id);
+        const meal = findNutritionMeal(plan, type, id);
+        const label = meal ? meal.name : t("nutrition_none_option");
         return `
         <td class="nutrition-plan-cell">
-          <select class="nutrition-select nutrition-plan-select" data-nutrition-plan-cell data-day-index="${dayIndex}" data-slot="${type}">
-            ${mealOptions(type, id)}
-          </select>
+          <label class="nutrition-plan-picker">
+            <span class="nutrition-plan-picker__label${meal ? "" : " is-empty"}">${escapeHtml(label)}</span>
+            <select class="nutrition-plan-select" data-nutrition-plan-cell data-day-index="${dayIndex}" data-slot="${type}">
+              ${mealOptions(type, id)}
+            </select>
+          </label>
         </td>
       `;
       }).join("");
@@ -3229,6 +3234,7 @@ function renderNutritionWeeklyPlan(plan) {
         <td>${escapeHtml(formatNutritionQty(line.qty))} ${escapeHtml(line.unit)}</td>
         <td class="nutrition-price-cell">
           <div class="nutrition-price-field">
+            <span class="nutrition-price-currency">$</span>
             <input type="number" min="0" step="1" class="entry-input nutrition-price-input" data-nutrition-price data-ingredient-id="${escapeHtml(line.id)}" value="${escapeHtml(String(line.price))}" />
             <span class="nutrition-price-unit">/${escapeHtml(line.unit)}</span>
           </div>

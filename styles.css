@@ -4351,7 +4351,7 @@ code {
 
 .nutrition-catalog__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
@@ -4509,12 +4509,55 @@ code {
 
 .nutrition-plan-cell {
   min-width: 0;
+  vertical-align: middle;
+}
+
+.nutrition-plan-picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 3.2rem;
+  padding: 6px 16px 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-strong);
+  cursor: pointer;
+}
+
+.nutrition-plan-picker::after {
+  content: "▾";
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-size: 0.7rem;
+  pointer-events: none;
+}
+
+.nutrition-plan-picker__label {
+  width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 0.8rem;
+  line-height: 1.25;
+}
+
+.nutrition-plan-picker__label.is-empty {
+  color: var(--muted);
 }
 
 .nutrition-plan-select {
-  min-height: 40px;
+  position: absolute;
+  inset: 0;
   width: 100%;
-  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+  appearance: none;
 }
 
 .nutrition-plan-total {
@@ -4621,6 +4664,12 @@ code {
 .nutrition-price-field .nutrition-price-input {
   min-width: 0;
   flex: 1;
+  text-align: right;
+}
+
+.nutrition-price-currency {
+  color: var(--muted);
+  font-size: 0.82rem;
 }
 
 .nutrition-price-unit {
