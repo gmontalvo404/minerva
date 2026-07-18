@@ -3216,8 +3216,10 @@ function renderNutritionWeeklyPlan(plan) {
       return `
       <tr>
         <td class="nutrition-cell-strong nutrition-day-cell">
-          <span class="nutrition-day-name">${escapeHtml(day.day || `Día ${dayIndex + 1}`)}</span>
-          <button type="button" class="nutrition-dice" data-nutrition-random-day="${dayIndex}" title="${escapeHtml(t("nutrition_random_day"))}" aria-label="${escapeHtml(t("nutrition_random_day"))}">🎲</button>
+          <div class="nutrition-day-inner">
+            <span class="nutrition-day-name">${escapeHtml(day.day || `Día ${dayIndex + 1}`)}</span>
+            <button type="button" class="nutrition-dice" data-nutrition-random-day="${dayIndex}" title="${escapeHtml(t("nutrition_random_day"))}" aria-label="${escapeHtml(t("nutrition_random_day"))}">🎲</button>
+          </div>
         </td>
         ${cells}
         <td class="nutrition-plan-total">${escapeHtml(formatCop(dayTotal))}</td>

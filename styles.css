@@ -4613,12 +4613,12 @@ code {
 
 .data-table--nutrition-plan th:first-child,
 .data-table--nutrition-plan td:first-child {
-  width: 16%;
+  width: 13%;
 }
 
 .data-table--nutrition-plan th:last-child,
 .data-table--nutrition-plan td:last-child {
-  width: 12%;
+  width: 11%;
 }
 
 .data-table--nutrition-shopping th:first-child,
@@ -4626,16 +4626,18 @@ code {
   width: 40%;
 }
 
-.nutrition-day-cell {
+.data-table--nutrition-plan td.nutrition-day-cell {
+  overflow: visible;
+  vertical-align: middle;
+}
+
+.nutrition-day-inner {
   display: flex;
   align-items: center;
-  gap: 6px;
-  justify-content: space-between;
+  gap: 8px;
 }
 
 .nutrition-day-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
