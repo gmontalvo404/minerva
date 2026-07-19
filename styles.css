@@ -4676,37 +4676,47 @@ code {
 }
 
 /* Exclude-ingredients control */
-.nutrition-exclude-grid {
+.nutrition-exclude-row {
+  max-width: 420px;
+}
+
+.nutrition-exclude-select {
+  min-height: 42px;
+}
+
+.nutrition-exclude-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  max-height: 160px;
-  overflow-y: auto;
-  padding: 2px;
+  margin-top: 12px;
 }
 
-.nutrition-exclude-chip {
+.nutrition-exclude-tag {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
-  border: 1px solid var(--line);
+  padding: 5px 6px 5px 12px;
   border-radius: 999px;
-  font-size: 0.8rem;
-  cursor: pointer;
-  user-select: none;
-  background: var(--panel-strong);
-}
-
-.nutrition-exclude-chip input {
-  margin: 0;
-}
-
-.nutrition-exclude-chip.is-excluded {
-  border-color: #d1495b;
+  font-size: 0.82rem;
+  border: 1px solid #d1495b;
   color: #d1495b;
   background: color-mix(in srgb, #d1495b 12%, transparent);
-  text-decoration: line-through;
+}
+
+.nutrition-exclude-remove {
+  appearance: none;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 999px;
+}
+
+.nutrition-exclude-remove:hover {
+  background: color-mix(in srgb, #d1495b 22%, transparent);
 }
 
 /* Ingredients editor table */

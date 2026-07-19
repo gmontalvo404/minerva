@@ -177,7 +177,9 @@ const I18N = {
     nutrition_ing_store: "Dónde comprar",
     nutrition_ingredient_delete_confirm: "¿Eliminar «{name}»? Se quitará de las comidas que lo usan.",
     nutrition_exclude_title: "Excluir ingredientes",
-    nutrition_exclude_hint: "Marca los que no quieres: no se listarán comidas que los contengan (tampoco en el random).",
+    nutrition_exclude_hint: "Agrega los que no quieres: no se listarán comidas que los contengan (tampoco en el random).",
+    nutrition_exclude_add: "Agregar ingrediente a excluir…",
+    nutrition_exclude_empty: "Ninguno excluido.",
     nutrition_loading: "Cargando plan...",
     view_label: "Vista",
     view_annual: "Resumen anual",
@@ -578,7 +580,9 @@ const I18N = {
     nutrition_ing_store: "Where to buy",
     nutrition_ingredient_delete_confirm: "Delete “{name}”? It will be removed from meals that use it.",
     nutrition_exclude_title: "Exclude ingredients",
-    nutrition_exclude_hint: "Check the ones you don't want: meals containing them won't be listed (or randomized).",
+    nutrition_exclude_hint: "Add the ones you don't want: meals containing them won't be listed (or randomized).",
+    nutrition_exclude_add: "Add an ingredient to exclude…",
+    nutrition_exclude_empty: "None excluded.",
     nutrition_loading: "Loading plan...",
     view_label: "View",
     view_annual: "Annual summary",
@@ -3157,23 +3161,33 @@ function computeNutritionShoppingList(plan, ingMap) {
 
 function renderNutritionExcludeControl(plan, excludedSet) {
   const ingredients = (plan.ingredients || []).slice().sort((a, b) => a.name.localeCompare(b.name));
-  const chips = ingredients
-    .map(
-      (ing) => `
-      <label class="nutrition-exclude-chip${excludedSet.has(ing.id) ? " is-excluded" : ""}">
-        <input type="checkbox" data-nutrition-exclude data-ingredient-id="${escapeHtml(ing.id)}" ${excludedSet.has(ing.id) ? "checked" : ""} />
-        <span>${escapeHtml(ing.name)}</span>
-      </label>
-    `,
-    )
-    .join("");
+  const available = ingredients.filter((ing) => !excludedSet.has(ing.id));
+  const excludedList = ingredients.filter((ing) => excludedSet.has(ing.id));
+  const options =
+    `<option value="">${escapeHtml(t("nutrition_exclude_add"))}</option>` +
+    available.map((ing) => `<option value="${escapeHtml(ing.id)}">${escapeHtml(ing.name)}</option>`).join("");
+  const tags = excludedList.length
+    ? excludedList
+        .map(
+          (ing) => `
+        <span class="nutrition-exclude-tag">
+          ${escapeHtml(ing.name)}
+          <button type="button" class="nutrition-exclude-remove" data-nutrition-exclude-remove="${escapeHtml(ing.id)}" aria-label="${escapeHtml(t("nutrition_meal_delete"))}">✕</button>
+        </span>
+      `,
+        )
+        .join("")
+    : `<span class="nutrition-empty">${escapeHtml(t("nutrition_exclude_empty"))}</span>`;
   return `
     <article class="card nutrition-card nutrition-exclude-card">
       <div class="card__head"><div>
         <h3>${escapeHtml(t("nutrition_exclude_title"))}</h3>
         <p class="card__eyebrow">${escapeHtml(t("nutrition_exclude_hint"))}</p>
       </div></div>
-      <div class="nutrition-exclude-grid">${chips}</div>
+      <div class="nutrition-exclude-row">
+        <select class="nutrition-select nutrition-exclude-select" data-nutrition-exclude-add>${options}</select>
+      </div>
+      <div class="nutrition-exclude-tags">${tags}</div>
     </article>
   `;
 }
@@ -3446,9 +3460,17 @@ function handleNutritionClick(event) {
     return;
   }
   const target = event.target.closest(
-    "[data-nutrition-add-meal],[data-nutrition-edit-meal],[data-nutrition-delete-meal],[data-nutrition-add-item],[data-nutrition-remove-item],[data-nutrition-save-meal],[data-nutrition-cancel-meal],[data-nutrition-random-week],[data-nutrition-random-day],[data-nutrition-delete-ingredient],[data-nutrition-add-ingredient-row]",
+    "[data-nutrition-add-meal],[data-nutrition-edit-meal],[data-nutrition-delete-meal],[data-nutrition-add-item],[data-nutrition-remove-item],[data-nutrition-save-meal],[data-nutrition-cancel-meal],[data-nutrition-random-week],[data-nutrition-random-day],[data-nutrition-delete-ingredient],[data-nutrition-add-ingredient-row],[data-nutrition-exclude-remove]",
   );
   if (!target) {
+    return;
+  }
+
+  if (target.hasAttribute("data-nutrition-exclude-remove")) {
+    const id = target.dataset.nutritionExcludeRemove;
+    plan.excluded_ingredients = (plan.excluded_ingredients || []).filter((item) => item !== id);
+    scheduleNutritionSave();
+    renderNutritionPanel();
     return;
   }
 
@@ -3589,18 +3611,16 @@ function handleNutritionChange(event) {
     }
     return;
   }
-  if (target.hasAttribute("data-nutrition-exclude")) {
-    const id = target.dataset.ingredientId;
-    const list = plan.excluded_ingredients || (plan.excluded_ingredients = []);
-    if (target.checked) {
+  if (target.hasAttribute("data-nutrition-exclude-add")) {
+    const id = target.value;
+    if (id) {
+      const list = plan.excluded_ingredients || (plan.excluded_ingredients = []);
       if (!list.includes(id)) {
         list.push(id);
       }
-    } else {
-      plan.excluded_ingredients = list.filter((item) => item !== id);
+      scheduleNutritionSave();
+      renderNutritionPanel();
     }
-    scheduleNutritionSave();
-    renderNutritionPanel();
     return;
   }
   if (target.hasAttribute("data-nutrition-draft-ingredient")) {
