@@ -1626,6 +1626,40 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
 
+_CHROME_REUSE_APPLESCRIPT = """
+on run argv
+  set targetURL to item 1 of argv
+  tell application "Google Chrome"
+    set foundTab to missing value
+    set foundWindow to missing value
+    repeat with w in windows
+      set tabIndex to 0
+      repeat with t in tabs of w
+        set tabIndex to tabIndex + 1
+        if (URL of t) starts with targetURL then
+          set foundTab to t
+          set foundWindow to w
+          set active tab index of w to tabIndex
+          exit repeat
+        end if
+      end repeat
+      if foundTab is not missing value then exit repeat
+    end repeat
+    if foundTab is not missing value then
+      set URL of foundTab to targetURL
+      set index of foundWindow to 1
+    else if (count of windows) > 0 then
+      tell front window to make new tab with properties {URL:targetURL}
+    else
+      make new window
+      set URL of active tab of front window to targetURL
+    end if
+    activate
+  end tell
+end run
+"""
+
+
 def open_in_browser(url: str) -> None:
     """Open the app in Google Chrome when available, else the default browser.
 
@@ -1640,8 +1674,22 @@ def open_in_browser(url: str) -> None:
         except webbrowser.Error:
             continue
 
-    # On macOS Chrome is usually not registered with webbrowser; use `open -a`.
+    # On macOS, reuse an existing Minerva tab (focus + reload it) instead of
+    # opening a duplicate; only open a new tab when none exists. Chrome's
+    # scripting dictionary can't touch tab groups, so a reused tab simply stays
+    # in whatever group it is already in (see chrome-extension/ for the group).
     if sys.platform == "darwin":
+        try:
+            subprocess.run(
+                ["osascript", "-e", _CHROME_REUSE_APPLESCRIPT, url],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=15,
+            )
+            return
+        except (OSError, subprocess.SubprocessError):
+            pass
         try:
             subprocess.Popen(
                 ["open", "-a", "Google Chrome", url],
