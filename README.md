@@ -44,6 +44,7 @@ Dark mode with demo data:
 +-- styles.css
 +-- app.js
 +-- server.py
++-- desktop
 `-- finance
     +-- shared
     |   +-- categories.json
@@ -64,6 +65,7 @@ Main files:
 - `styles.css`: styling, responsive layout, and themes.
 - `app.js`: data loading, calculations, rendering, interactions, and backend calls.
 - `server.py`: local server, write endpoints, and USD/COP rate proxy.
+- `desktop`: macOS launcher app to start and stop the server without a terminal.
 - `finance/shared`: shared category, type, and currency catalogs.
 - `finance/data/cash_flow`: cash flow data by year or dataset.
 - `finance/data/debts`: debt data.
@@ -97,6 +99,26 @@ MINERVA_BROWSER=chrome python3 server.py
 ```
 
 To stop the server, press `Ctrl+C` in the terminal.
+
+## Desktop App (macOS)
+
+If you would rather not use a terminal, build the launcher app once:
+
+```bash
+./desktop/build.sh
+```
+
+That leaves `Minerva.app` in `~/Applications`, ready for the Dock or Spotlight.
+Opening it turns the server on and shows the dashboard in the browser you pick;
+it also reloads the server, changes the port, and shows the server log. See
+`desktop/README.md`.
+
+The port is `8123` unless `MINERVA_PORT` says otherwise, which is how the app
+changes it:
+
+```bash
+MINERVA_PORT=8125 python3 server.py
+```
 
 You can also open `index.html` directly, but the app needs to be served over HTTP to load JSON with `fetch` and to save changes through the local endpoints.
 

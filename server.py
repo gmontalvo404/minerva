@@ -15,8 +15,16 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 import webbrowser
 
+def _port_from_env(default: int = 8123) -> int:
+    """Port to serve on. MINERVA_PORT overrides it; garbage falls back."""
+    raw = os.environ.get("MINERVA_PORT", "").strip()
+    if raw.isdigit() and 1 <= int(raw) <= 65535:
+        return int(raw)
+    return default
+
+
 HOST = "localhost"
-PORT = 8123
+PORT = _port_from_env()
 ROOT = Path(__file__).resolve().parent
 FINANCE_DATA_ROOT = (ROOT / "finance/data").resolve()
 ALLOWED_TYPES = {"needs", "wants", "savings", "debts"}
@@ -1732,9 +1740,13 @@ def open_in_browser(url: str) -> None:
     """Open the app in Firefox when available, else Chrome, else the default.
 
     Set MINERVA_BROWSER=chrome (or =default) to override the preference for a
-    single run.
+    single run, or =none to open nothing. The desktop app in desktop/ uses
+    =none and opens the browser the user picked itself.
     """
     preference = os.environ.get("MINERVA_BROWSER", "firefox").strip().lower()
+
+    if preference == "none":
+        return
 
     if preference == "default":
         webbrowser.open(url, new=2, autoraise=True)
