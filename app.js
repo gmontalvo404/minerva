@@ -1,4 +1,3 @@
-const DEFAULT_YEAR_FALLBACK = "demo";
 const YEAR_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]*$/i;
 const THEME_STORAGE_KEY = "cashflow-dashboard-theme";
 const SELECTED_FILE_STORAGE_KEY = "cashflow-dashboard-selected-file";
@@ -13,9 +12,51 @@ const CATEGORY_SORT_DIRECTION_STORAGE_KEY = "cashflow-dashboard-category-sort-di
 const LIVE_USD_COP_RATE_STORAGE_KEY = "cashflow-dashboard-live-usd-cop-rate";
 const LIVE_USD_COP_RATE_ENDPOINT = "/api/fx/usd-cop";
 const LIVE_RELOAD_ENDPOINT = "/api/dev/live-reload";
-const CASH_FLOW_DATA_ROOT = "finance/data/cash_flow";
-const DEBT_DATA_PATH = "finance/data/debts/debts.json";
+// Two datasets: "live" is your own data (kept out of git, and movable), "demo"
+// is the sample one that ships with the repo. The switch in the header picks
+// which folder every read and write goes to.
+const DATASET_STORAGE_KEY = "cashflow-dashboard-dataset";
+const DEFAULT_DATASET = "live";
+const AVAILABLE_DATASETS = new Set(["live", "demo"]);
+const DATASET_ROOTS = {
+  live: "finance/data",
+  demo: "finance/app/demo",
+};
+const SHARED_DATA_ROOT = "finance/app/shared";
 const DEFAULT_LANGUAGE = "en";
+
+function normalizeDataset(value) {
+  const dataset = String(value || "").trim().toLowerCase();
+  return AVAILABLE_DATASETS.has(dataset) ? dataset : DEFAULT_DATASET;
+}
+
+function datasetRoot() {
+  return DATASET_ROOTS[normalizeDataset(state.dataset)];
+}
+
+function cashFlowDataRoot() {
+  return `${datasetRoot()}/cash_flow`;
+}
+
+function debtDataPath() {
+  return `${datasetRoot()}/debts/debts.json`;
+}
+
+function nutritionDataPath() {
+  return `${datasetRoot()}/nutrition/plan.json`;
+}
+
+function defaultYearFallback() {
+  return normalizeDataset(state.dataset) === "demo" ? "demo" : String(new Date().getFullYear());
+}
+
+// The selected year is remembered per dataset: the demo has its own year names.
+function selectedYearStorageKey(dataset) {
+  const normalized = normalizeDataset(dataset);
+  return normalized === DEFAULT_DATASET
+    ? SELECTED_FILE_STORAGE_KEY
+    : `${SELECTED_FILE_STORAGE_KEY}-${normalized}`;
+}
 const LOCAL_DEV_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0"]);
 const AVAILABLE_THEMES = new Set(["light", "dark"]);
 const AVAILABLE_LANGUAGES = new Set(["es", "en"]);
@@ -108,6 +149,8 @@ const I18N = {
     theme_toggle_to_light: "Cambiar a tema claro",
     app_header_title: "Minerva",
     app_section_label: "Sección",
+    dataset_live_hint: "Tus datos reales",
+    dataset_demo_hint: "Datos de ejemplo, para probar sin tocar los tuyos",
     app_section_cash_flow: "Cash flow",
     app_section_debts: "Deudas",
     app_section_credit: "Simular créditos",
@@ -511,6 +554,8 @@ const I18N = {
     theme_toggle_to_light: "Switch to light theme",
     app_header_title: "Minerva",
     app_section_label: "Section",
+    dataset_live_hint: "Your own data",
+    dataset_demo_hint: "Sample data, to try things out without touching yours",
     app_section_cash_flow: "Cash flow",
     app_section_debts: "Debts",
     app_section_credit: "Credit simulator",
@@ -1005,6 +1050,7 @@ const dom = {
   appShell: document.querySelector(".app-shell"),
   heroChip: document.querySelector("#hero-chip"),
   yearSelect: document.querySelector("#year-select"),
+  datasetButtons: [...document.querySelectorAll("[data-dataset]")],
   languageButtons: [...document.querySelectorAll("[data-language]")],
   themeToggle: document.querySelector("#theme-toggle"),
   themeToggleText: document.querySelector("#theme-toggle-text"),
@@ -1135,6 +1181,7 @@ const dom = {
 
 const state = {
   availableYears: [],
+  dataset: getInitialDataset(),
   language: getInitialLanguage(),
   theme: getInitialTheme(),
   selectedYear: getInitialSelectedYear(),
@@ -1246,6 +1293,15 @@ function init() {
       state.signature = "";
       refreshDashboard({ force: true });
     }
+  });
+
+  dom.datasetButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextDataset = button.dataset.dataset;
+      if (nextDataset && normalizeDataset(nextDataset) !== state.dataset) {
+        switchDataset(nextDataset);
+      }
+    });
   });
 
   dom.languageButtons.forEach((button) => {
@@ -1493,7 +1549,7 @@ async function refreshDashboard({ force = false } = {}) {
 
 async function discoverAvailableYears() {
   try {
-    const listing = await fetchText(`${CASH_FLOW_DATA_ROOT}/`);
+    const listing = await fetchText(`${cashFlowDataRoot()}/`);
     const years = parseYearsFromDirectoryListing(listing);
     if (years.length) {
       return years;
@@ -1502,21 +1558,21 @@ async function discoverAvailableYears() {
     console.warn("Could not automatically discover available years.", error);
   }
 
-  return state.availableYears.length ? state.availableYears : [DEFAULT_YEAR_FALLBACK];
+  return state.availableYears.length ? state.availableYears : [defaultYearFallback()];
 }
 
 async function loadFinanceData(year) {
   const [incomeData, sharedCategories, sharedTypes, sharedCurrencies, debtData] = await Promise.all([
-    fetchJson(`${CASH_FLOW_DATA_ROOT}/${year}/incomes/incomes.json`),
-    fetchJson("finance/shared/categories.json"),
-    fetchJson("finance/shared/types.json"),
-    fetchJson("finance/shared/currencies.json"),
-    fetchJson(DEBT_DATA_PATH, { optional: true, fallback: { debts: [] } }),
+    fetchJson(`${cashFlowDataRoot()}/${year}/incomes/incomes.json`),
+    fetchJson(`${SHARED_DATA_ROOT}/categories.json`),
+    fetchJson(`${SHARED_DATA_ROOT}/types.json`),
+    fetchJson(`${SHARED_DATA_ROOT}/currencies.json`),
+    fetchJson(debtDataPath(), { optional: true, fallback: { debts: [] } }),
   ]);
 
   const monthPayloads = await Promise.all(
     MONTHS.map(async (month) => {
-      const unifiedPath = `${CASH_FLOW_DATA_ROOT}/${year}/outcomes/${month.folder}.json`;
+      const unifiedPath = `${cashFlowDataRoot()}/${year}/outcomes/${month.folder}.json`;
       const unifiedPayload = await fetchJson(unifiedPath, { optional: true, fallback: null });
       if (unifiedPayload && Array.isArray(unifiedPayload.entries)) {
         return [
@@ -1531,7 +1587,7 @@ async function loadFinanceData(year) {
       const files = await Promise.all(
         TYPE_ORDER.map(async (typeKey) => {
           const payload = await fetchJson(
-            `${CASH_FLOW_DATA_ROOT}/${year}/outcomes/${month.folder}/${typeKey}.json`,
+            `${cashFlowDataRoot()}/${year}/outcomes/${month.folder}/${typeKey}.json`,
             { optional: true, fallback: { entries: [] } },
           );
           return [typeKey, payload];
@@ -1755,7 +1811,7 @@ async function fetchJson(path, options = {}) {
 
 function buildDashboard(raw, year) {
   const incomeByMonth = buildIncomeMonthLookup(raw.incomeData.months || []);
-  const incomeSourcePath = `${CASH_FLOW_DATA_ROOT}/${year}/incomes/incomes.json`;
+  const incomeSourcePath = `${cashFlowDataRoot()}/${year}/incomes/incomes.json`;
 
   const months = MONTHS.map((month) => {
     const monthIncome = incomeByMonth.get(month.folder) || incomeByMonth.get(month.name.toLowerCase()) || {};
@@ -1772,7 +1828,7 @@ function buildDashboard(raw, year) {
         typeKey,
         hasUnifiedOutcomes
           ? unifiedSourcePath
-          : `${CASH_FLOW_DATA_ROOT}/${year}/outcomes/${month.folder}/${typeKey}.json`,
+          : `${cashFlowDataRoot()}/${year}/outcomes/${month.folder}/${typeKey}.json`,
       ]),
     );
     const rawEntries = [];
@@ -2304,7 +2360,7 @@ function populateDebtLinkYearOptions(debt) {
     ...state.availableYears,
     ...numericRange,
   ].filter(Boolean))].sort(compareYearKeys);
-  const fallbackYear = state.selectedYear || years[0] || DEFAULT_YEAR_FALLBACK;
+  const fallbackYear = state.selectedYear || years[0] || defaultYearFallback();
 
   dom.debtLinkYear.innerHTML = years.length
     ? years.map((year) => `<option value="${escapeHtml(year)}">${escapeHtml(year)}</option>`).join("")
@@ -2675,7 +2731,7 @@ function populateCreateDebtLinkYearOptions() {
     ...state.availableYears,
     ...numericRange,
   ].filter(Boolean))].sort(compareYearKeys);
-  const fallbackYear = state.selectedYear || years[0] || DEFAULT_YEAR_FALLBACK;
+  const fallbackYear = state.selectedYear || years[0] || defaultYearFallback();
 
   dom.createDebtLinkYear.innerHTML = years.length
     ? years.map((year) => `<option value="${escapeHtml(year)}">${escapeHtml(year)}</option>`).join("")
@@ -2866,7 +2922,7 @@ async function loadNutritionPlan() {
   }
   state.nutritionPlanLoading = true;
   try {
-    const raw = await fetchText("finance/data/nutrition/plan.json");
+    const raw = await fetchText(nutritionDataPath());
     state.nutritionPlan = JSON.parse(raw);
   } catch (error) {
     console.error("Could not load nutrition plan", error);
@@ -3737,7 +3793,7 @@ async function saveNutritionPlan() {
     await fetch("/api/nutrition/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: "finance/data/nutrition/plan.json", document: state.nutritionPlan }),
+      body: JSON.stringify({ path: nutritionDataPath(), document: state.nutritionPlan }),
     });
   } catch (error) {
     console.error("Could not save nutrition plan", error);
@@ -4477,9 +4533,10 @@ function renderViewMode() {
 }
 
 function renderShellMetadata() {
-  const year = state.selectedYear || DEFAULT_YEAR_FALLBACK;
+  const year = state.selectedYear || defaultYearFallback();
   document.documentElement.lang = state.language;
   renderStaticText();
+  renderDatasetButtons();
   renderLanguageButtons();
   renderThemeToggle();
   renderYearOptions();
@@ -4504,6 +4561,43 @@ function renderStaticText() {
     const key = node.dataset.i18n;
     node.textContent = t(key);
   });
+  document.querySelectorAll("[data-i18n-title]").forEach((node) => {
+    node.title = t(node.dataset.i18nTitle);
+  });
+}
+
+function switchDataset(dataset) {
+  state.dataset = normalizeDataset(dataset);
+  persistDataset(state.dataset);
+
+  // Everything on screen belongs to the dataset we are leaving.
+  state.availableYears = [];
+  state.selectedYear = normalizeSelectedYear(readStorage(selectedYearStorageKey(state.dataset)));
+  state.dashboard = null;
+  state.debtItems = [];
+  state.nutritionPlan = null;
+  state.nutritionPlanLoading = false;
+  state.signature = "";
+
+  closePrettySelect();
+  closeEntryActionsMenu();
+  closeDebtActionsMenu();
+
+  renderDatasetButtons();
+  renderShellMetadata();
+  renderDebtSection();
+  renderAppMode();
+  refreshDashboard({ force: true });
+}
+
+function renderDatasetButtons() {
+  const dataset = normalizeDataset(state.dataset);
+  dom.datasetButtons.forEach((button) => {
+    const isActive = button.dataset.dataset === dataset;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  });
+  document.body.classList.toggle("is-demo-dataset", dataset === "demo");
 }
 
 function renderLanguageButtons() {
@@ -6621,7 +6715,7 @@ async function handleCreateEntrySubmit(event) {
 
   const targetPath =
     month.sourcePathByType?.[typeKey] ||
-    `${CASH_FLOW_DATA_ROOT}/${state.selectedYear}/outcomes/${month.folder}/${typeKey}.json`;
+    `${cashFlowDataRoot()}/${state.selectedYear}/outcomes/${month.folder}/${typeKey}.json`;
   const formControls = [...dom.createEntryForm.querySelectorAll("input, select, button")];
   formControls.forEach((control) => {
     control.disabled = true;
@@ -7827,14 +7921,14 @@ async function updateDebtFields({ debtId, updates }) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      path: DEBT_DATA_PATH,
+      path: debtDataPath(),
       debt_id: debtId,
       updates,
     }),
   });
 
   if (!response.ok) {
-    throw new Error(`Could not update ${DEBT_DATA_PATH}`);
+    throw new Error(`Could not update ${debtDataPath()}`);
   }
 
   return response.json();
@@ -7847,13 +7941,13 @@ async function createDebt({ debt }) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      path: DEBT_DATA_PATH,
+      path: debtDataPath(),
       debt,
     }),
   });
 
   if (!response.ok) {
-    throw new Error(`Could not create ${DEBT_DATA_PATH}`);
+    throw new Error(`Could not create ${debtDataPath()}`);
   }
 
   return response.json();
@@ -8019,8 +8113,8 @@ function syncAvailableYears(years) {
     .filter((year) => YEAR_KEY_PATTERN.test(year))
     .sort(compareYearKeys);
 
-  state.availableYears = normalizedYears.length ? normalizedYears : [DEFAULT_YEAR_FALLBACK];
-  const preferredYear = normalizeSelectedYear(readStorage(SELECTED_FILE_STORAGE_KEY));
+  state.availableYears = normalizedYears.length ? normalizedYears : [defaultYearFallback()];
+  const preferredYear = normalizeSelectedYear(readStorage(selectedYearStorageKey(state.dataset)));
 
   if (!state.availableYears.includes(state.selectedYear)) {
     state.selectedYear = state.availableYears.includes(preferredYear)
@@ -8554,8 +8648,12 @@ function getInitialLanguage() {
   return normalizeLanguage(readStorage(LANGUAGE_STORAGE_KEY));
 }
 
+function getInitialDataset() {
+  return normalizeDataset(readStorage(DATASET_STORAGE_KEY));
+}
+
 function getInitialSelectedYear() {
-  return normalizeSelectedYear(readStorage(SELECTED_FILE_STORAGE_KEY));
+  return normalizeSelectedYear(readStorage(selectedYearStorageKey(getInitialDataset())));
 }
 
 function getInitialSelectedMonthIndex() {
@@ -8657,6 +8755,14 @@ function persistTheme(theme) {
   }
 }
 
+function persistDataset(dataset) {
+  try {
+    localStorage.setItem(DATASET_STORAGE_KEY, normalizeDataset(dataset));
+  } catch (error) {
+    console.warn("Could not save the dataset preference.", error);
+  }
+}
+
 function persistLanguage(language) {
   try {
     localStorage.setItem(LANGUAGE_STORAGE_KEY, normalizeLanguage(language));
@@ -8672,7 +8778,7 @@ function persistSelectedYear(year) {
   }
 
   try {
-    localStorage.setItem(SELECTED_FILE_STORAGE_KEY, normalized);
+    localStorage.setItem(selectedYearStorageKey(state.dataset), normalized);
   } catch (error) {
     console.warn("Could not save the selected data folder.", error);
   }

@@ -46,17 +46,22 @@ Dark mode with demo data:
 +-- server.py
 +-- desktop
 `-- finance
-    +-- shared
-    |   +-- categories.json
-    |   +-- currencies.json
-    |   `-- types.json
-    `-- data
+    +-- app                  <- ships with the repo
+    |   +-- shared
+    |   |   +-- categories.json
+    |   |   +-- currencies.json
+    |   |   `-- types.json
+    |   +-- images
+    |   `-- demo             <- the Demo dataset
+    |       +-- cash_flow
+    |       +-- debts
+    |       `-- nutrition
+    `-- data                 <- your own data, ignored by git
         +-- cash_flow
-        |   +-- demo
         |   +-- 2026
         |   `-- 2027
-        `-- debts
-            `-- debts.json
+        +-- debts
+        `-- nutrition
 ```
 
 Main files:
@@ -66,9 +71,10 @@ Main files:
 - `app.js`: data loading, calculations, rendering, interactions, and backend calls.
 - `server.py`: local server, write endpoints, and USD/COP rate proxy.
 - `desktop`: macOS launcher app to start and stop the server without a terminal.
-- `finance/shared`: shared category, type, and currency catalogs.
-- `finance/data/cash_flow`: cash flow data by year or dataset.
-- `finance/data/debts`: debt data.
+- `finance/app/shared`: shared category, type, and currency catalogs.
+- `finance/app/demo`: the sample dataset behind the Demo switch.
+- `finance/data`: your own data — cash flow by year, debts, and the meal plan.
+  It is ignored by git and can live anywhere (see below).
 
 ## Requirements
 
@@ -124,7 +130,25 @@ You can also open `index.html` directly, but the app needs to be served over HTT
 
 ## Data
 
-The app automatically discovers folders inside `finance/data/cash_flow`. Each folder can represent a year, such as `2026`, `2027`, or a dataset such as `demo`.
+There are two datasets, and the **Live / Demo** switch in the header picks which
+one everything reads and writes:
+
+- **Live** is your own data in `finance/data`. It is ignored by git, and
+  `MINERVA_DATA_ROOT` moves it anywhere on disk:
+
+  ```bash
+  MINERVA_DATA_ROOT=~/Documents/minerva-data python3 server.py
+  ```
+
+  The desktop app has a folder picker for the same thing. If you have no data
+  yet, start on Demo.
+
+- **Demo** is the sample dataset in `finance/app/demo`, which ships with the
+  repo and is safe to publish. It is editable — a sandbox to try things out —
+  so remember that changes there do show up in `git status`.
+
+Inside either one, the app discovers the folders in `cash_flow` on its own. Each
+folder is a year, such as `2026` or `2027`.
 
 ### Incomes
 
@@ -251,7 +275,8 @@ The debts view edits this file through `POST /api/debts/update`.
 
 4. Restart or refresh the app. The new year will appear in the selector if the folder is available from the local server.
 
-You can use `finance/data/cash_flow/demo` as a reference dataset.
+You can use `finance/app/demo/cash_flow/demo` as a reference dataset, or just
+flip the switch to Demo and look at it in the app.
 
 ## Local Endpoints
 
@@ -276,7 +301,9 @@ For safety, `server.py` only allows writes to `.json` files inside `finance/data
 
 ## Privacy
 
-Financial data is stored in local files. The current `.gitignore` excludes personal data under `finance/data` and keeps only the `finance/data/cash_flow/demo` dataset as publishable sample data.
+Financial data is stored in local files. The current `.gitignore` excludes the
+whole `finance/data` folder, so nothing of yours is ever staged; what ships is
+the sample dataset in `finance/app/demo`.
 
 Before sharing the project, verify that you are not including real financial information in the JSON files.
 

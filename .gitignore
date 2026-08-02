@@ -2,9 +2,5 @@ __pycache__/
 **/__pycache__/
 scripts/
 
-# Keep personal finance data local. The demo dataset is safe to publish.
-/finance/data/*
-!/finance/data/cash_flow/
-/finance/data/cash_flow/*
-!/finance/data/cash_flow/demo/
-!/finance/data/cash_flow/demo/**
+# Your finance data stays local. The demo dataset in finance/app ships with the repo.
+/finance/data/

@@ -11,7 +11,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import time
 import unicodedata
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 import webbrowser
 
@@ -23,10 +23,32 @@ def _port_from_env(default: int = 8123) -> int:
     return default
 
 
+def _data_root_from_env(default: Path) -> tuple[Path, str]:
+    """Where your own finance JSON lives. MINERVA_DATA_ROOT moves it anywhere on
+    disk (an external disk, a synced folder); an unusable value falls back to
+    the default one and says why.
+    """
+    raw = os.environ.get("MINERVA_DATA_ROOT", "").strip()
+    if not raw:
+        return default, ""
+
+    candidate = Path(raw).expanduser()
+    if not candidate.is_dir():
+        return default, f"MINERVA_DATA_ROOT no es una carpeta: {candidate}"
+    return candidate.resolve(), ""
+
+
 HOST = "localhost"
 PORT = _port_from_env()
 ROOT = Path(__file__).resolve().parent
-FINANCE_DATA_ROOT = (ROOT / "finance/data").resolve()
+
+# Two datasets: your own data, which can live anywhere and is not in git, and
+# the demo one, which ships with the repo. The app picks between them with the
+# Live/Demo switch and asks for paths under one prefix or the other.
+DATA_URL_PREFIX = "finance/data"
+DEMO_URL_PREFIX = "finance/app/demo"
+FINANCE_DATA_ROOT, DATA_ROOT_WARNING = _data_root_from_env((ROOT / DATA_URL_PREFIX).resolve())
+DEMO_DATA_ROOT = (ROOT / DEMO_URL_PREFIX).resolve()
 ALLOWED_TYPES = {"needs", "wants", "savings", "debts"}
 MONTH_FOLDERS = (
     "01-january", "02-february", "03-march", "04-april",
@@ -42,6 +64,25 @@ LIVE_RELOAD_WATCH_PATHS = (
     ROOT / "styles.css",
     ROOT / "server.py",
 )
+
+
+def resolve_dataset_path(relative_path: str) -> tuple[Path, Path]:
+    """Turn a 'finance/...' path from the app into a file on disk.
+
+    Returns the path together with the dataset root it belongs to, so callers
+    can keep working inside the same dataset.
+    """
+    cleaned = relative_path.replace("\\", "/").strip("/")
+    for prefix, root in ((DEMO_URL_PREFIX, DEMO_DATA_ROOT), (DATA_URL_PREFIX, FINANCE_DATA_ROOT)):
+        if cleaned == prefix:
+            return root, root
+        if cleaned.startswith(f"{prefix}/"):
+            return (root / cleaned[len(prefix) + 1:]).resolve(), root
+    raise ValueError("Path is outside the data folders")
+
+
+def dataset_url_prefix(root: Path) -> str:
+    return DEMO_URL_PREFIX if root == DEMO_DATA_ROOT else DATA_URL_PREFIX
 
 
 def utc_now_iso() -> str:
@@ -64,7 +105,22 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def __init__(self, *args, **kwargs):
+        # Which dataset the request being served belongs to. Set from the path
+        # the app sends, so the debt sync never crosses datasets.
+        self._dataset_root = FINANCE_DATA_ROOT
         super().__init__(*args, directory=str(ROOT), **kwargs)
+
+    def translate_path(self, path: str) -> str:
+        """Serve finance/data/... from the live data root, wherever it is."""
+        cleaned = unquote(urlparse(path).path).strip("/")
+        if cleaned != DATA_URL_PREFIX and not cleaned.startswith(f"{DATA_URL_PREFIX}/"):
+            return super().translate_path(path)
+
+        suffix = cleaned[len(DATA_URL_PREFIX):].strip("/")
+        candidate = (FINANCE_DATA_ROOT / suffix).resolve() if suffix else FINANCE_DATA_ROOT
+        if candidate != FINANCE_DATA_ROOT and FINANCE_DATA_ROOT not in candidate.parents:
+            return str(FINANCE_DATA_ROOT)  # a '..' tried to climb out
+        return str(candidate)
 
     def handle(self) -> None:
         try:
@@ -313,14 +369,14 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         else:
             target_path = source_path.with_name(f"{target_type}.json")
             target_document, target_entries, _ = self._load_entries(
-                str(target_path.relative_to(ROOT)),
+                self._dataset_relative(target_path),
                 create_if_missing=True,
             )
             source_entries.pop(entry_index)
             target_entries.append(updated_entry)
             self._write_document(source_path, source_document)
             self._write_document(target_path, target_document)
-            response_path = str(target_path.relative_to(ROOT))
+            response_path = self._dataset_relative(target_path)
 
         if is_unified_outcomes and changes:
             self._write_document(source_path, source_document)
@@ -587,7 +643,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
 
     def _handle_update_debt(self) -> None:
         payload = self._read_json_body()
-        relative_path = payload.get("path", "finance/data/debts/debts.json")
+        relative_path = payload.get("path", f"{DATA_URL_PREFIX}/debts/debts.json")
         debt_id = str(payload["debt_id"]).strip()
         updates = payload["updates"]
         if not debt_id:
@@ -635,7 +691,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
 
     def _handle_sync_debt_cash_flow(self) -> None:
         payload = self._read_json_body() if self.headers.get("Content-Length") else {}
-        relative_path = payload.get("path", "finance/data/debts/debts.json")
+        relative_path = payload.get("path", f"{DATA_URL_PREFIX}/debts/debts.json")
         _, debts, _ = self._load_debts(relative_path)
         report = self._sync_auto_cash_flow_entries(debts)
         self._send_json(
@@ -676,7 +732,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         """Scan cash flow files for manual abono entries (extra_payment or category=abono)
         with linked_debts, grouped by debt_id and absolute month."""
         result: dict = {}
-        cash_flow_root = FINANCE_DATA_ROOT / "cash_flow"
+        cash_flow_root = self._cash_flow_root
         if not cash_flow_root.exists():
             return result
         for year_dir in cash_flow_root.iterdir():
@@ -823,7 +879,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         return schedule
 
     def _sync_auto_cash_flow_entries(self, debts: list) -> dict:
-        cash_flow_root = FINANCE_DATA_ROOT / "cash_flow"
+        cash_flow_root = self._cash_flow_root
         desired: dict = {}
         all_abonos = self._collect_debt_abonos()
 
@@ -895,7 +951,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                         affected_year_months.add((year_name, month_folder))
 
         for (year, month_folder) in sorted(affected_year_months):
-            outcomes_dir = FINANCE_DATA_ROOT / "cash_flow" / year / "outcomes"
+            outcomes_dir = self._cash_flow_root / year / "outcomes"
             if not outcomes_dir.is_dir():
                 continue
             month_path = outcomes_dir / f"{month_folder}.json"
@@ -991,7 +1047,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
 
     def _handle_create_debt(self) -> None:
         payload = self._read_json_body()
-        relative_path = payload.get("path", "finance/data/debts/debts.json")
+        relative_path = payload.get("path", f"{DATA_URL_PREFIX}/debts/debts.json")
         debt_payload = payload["debt"]
         if not isinstance(debt_payload, dict):
             raise ValueError("Missing debt payload")
@@ -1020,7 +1076,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
 
     def _handle_save_nutrition(self) -> None:
         payload = self._read_json_body()
-        relative_path = payload.get("path", "finance/data/nutrition/plan.json")
+        relative_path = payload.get("path", f"{DATA_URL_PREFIX}/nutrition/plan.json")
         document = payload["document"]
         if not isinstance(document, dict):
             raise ValueError("Missing nutrition document")
@@ -1152,8 +1208,9 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
     def _maybe_sync_after_entry_mutation(self, *entries: dict) -> None:
         if not any(self._entry_affects_debt_sync(entry) for entry in entries if entry):
             return
+        debts_path = self._dataset_relative(self._dataset_root / "debts" / "debts.json")
         try:
-            _, debts, _ = self._load_debts("finance/data/debts/debts.json")
+            _, debts, _ = self._load_debts(debts_path)
         except (OSError, json.JSONDecodeError, ValueError, IndexError):
             return
         self._safe_sync_auto_cash_flow_entries(debts)
@@ -1166,12 +1223,22 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             entry["history"] = []
 
     def _resolve_data_path(self, relative_path: str) -> Path:
-        candidate = (ROOT / relative_path).resolve()
-        if FINANCE_DATA_ROOT not in candidate.parents:
-            raise ValueError("Path is outside finance/data")
+        candidate, root = resolve_dataset_path(relative_path)
+        if root not in candidate.parents:
+            raise ValueError("Path is outside the data folders")
         if candidate.suffix.lower() != ".json":
             raise ValueError("Only JSON files can be updated")
+        self._dataset_root = root
         return candidate
+
+    def _dataset_relative(self, path: Path) -> str:
+        """The 'finance/...' name the app uses for a file of the active dataset."""
+        relative = path.resolve().relative_to(self._dataset_root).as_posix()
+        return f"{dataset_url_prefix(self._dataset_root)}/{relative}"
+
+    @property
+    def _cash_flow_root(self) -> Path:
+        return self._dataset_root / "cash_flow"
 
     def _read_flag(self, entry: dict, primary_key: str, legacy_key: str, default: bool = True) -> bool:
         if primary_key in entry:
@@ -1767,6 +1834,9 @@ def open_in_browser(url: str) -> None:
 def main() -> None:
     server = ThreadingHTTPServer((HOST, PORT), FinanceDataHandler)
     print(f"Serving {ROOT} at http://{HOST}:{PORT}")
+    print(f"Data from {FINANCE_DATA_ROOT}")
+    if DATA_ROOT_WARNING:
+        print(DATA_ROOT_WARNING, file=sys.stderr)
     open_in_browser(f"http://{HOST}:{PORT}")
     try:
         server.serve_forever()
