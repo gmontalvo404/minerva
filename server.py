@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from copy import deepcopy
@@ -1660,24 +1661,48 @@ end run
 """
 
 
-def open_in_browser(url: str) -> None:
-    """Open the app in Google Chrome when available, else the default browser.
+def _open_in_firefox(url: str) -> bool:
+    """Open ``url`` in Firefox. Returns True when Firefox took the request.
 
-    Chrome renders this dashboard noticeably more smoothly than Firefox, so we
-    prefer it. If Chrome is not installed we fall back to the system default.
+    Firefox exposes no AppleScript dictionary, so there is no way to look for
+    an existing Minerva tab the way we can with Chrome; every call adds a tab
+    to the running window.
     """
+    if sys.platform == "darwin":
+        try:
+            subprocess.run(
+                ["open", "-a", "Firefox", url],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=15,
+            )
+            return True
+        except (OSError, subprocess.SubprocessError):
+            return False
+
+    # Firefox is registered with webbrowser under one of these names.
+    for name in ("firefox", "mozilla-firefox", "iceweasel"):
+        try:
+            webbrowser.get(name).open(url, new=2, autoraise=True)
+            return True
+        except webbrowser.Error:
+            continue
+    return False
+
+
+def _open_in_chrome(url: str) -> bool:
+    """Open ``url`` in Chrome. Returns True when Chrome took the request."""
     # Chrome is often registered with webbrowser under one of these names.
     for name in ("chrome", "google-chrome", "chromium", "chromium-browser"):
         try:
             webbrowser.get(name).open(url, new=2, autoraise=True)
-            return
+            return True
         except webbrowser.Error:
             continue
 
     # On macOS, reuse an existing Minerva tab (focus + reload it) instead of
-    # opening a duplicate; only open a new tab when none exists. Chrome's
-    # scripting dictionary can't touch tab groups, so a reused tab simply stays
-    # in whatever group it is already in (see chrome-extension/ for the group).
+    # opening a duplicate; only open a new tab when none exists.
     if sys.platform == "darwin":
         try:
             subprocess.run(
@@ -1687,7 +1712,7 @@ def open_in_browser(url: str) -> None:
                 stderr=subprocess.DEVNULL,
                 timeout=15,
             )
-            return
+            return True
         except (OSError, subprocess.SubprocessError):
             pass
         try:
@@ -1696,9 +1721,32 @@ def open_in_browser(url: str) -> None:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            return
+            return True
         except OSError:
             pass
+
+    return False
+
+
+def open_in_browser(url: str) -> None:
+    """Open the app in Firefox when available, else Chrome, else the default.
+
+    Set MINERVA_BROWSER=chrome (or =default) to override the preference for a
+    single run.
+    """
+    preference = os.environ.get("MINERVA_BROWSER", "firefox").strip().lower()
+
+    if preference == "default":
+        webbrowser.open(url, new=2, autoraise=True)
+        return
+
+    order = (_open_in_chrome, _open_in_firefox)
+    if preference != "chrome":
+        order = (_open_in_firefox, _open_in_chrome)
+
+    for opener in order:
+        if opener(url):
+            return
 
     # Fall back to the default browser.
     webbrowser.open(url, new=2, autoraise=True)

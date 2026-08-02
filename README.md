@@ -71,7 +71,9 @@ Main files:
 ## Requirements
 
 - Python 3.10 or newer.
-- A modern browser.
+- Firefox (preferred) or any modern browser. Make sure hardware acceleration is
+  on in the browser settings, otherwise the dashboard scrolls and animates
+  sluggishly.
 - Internet access only if you want to use the live USD/COP rate.
 
 ## Run Locally
@@ -88,7 +90,13 @@ The server will be available at:
 http://localhost:8123
 ```
 
-`server.py` attempts to open the browser automatically. To stop it, press `Ctrl+C` in the terminal.
+`server.py` opens Firefox automatically, falling back to Chrome and then to the system default browser. Set `MINERVA_BROWSER=chrome` (or `=default`) to override that for a single run:
+
+```bash
+MINERVA_BROWSER=chrome python3 server.py
+```
+
+To stop the server, press `Ctrl+C` in the terminal.
 
 You can also open `index.html` directly, but the app needs to be served over HTTP to load JSON with `fetch` and to save changes through the local endpoints.
 
