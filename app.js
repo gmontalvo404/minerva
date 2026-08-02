@@ -513,6 +513,7 @@ const I18N = {
     history_false: "No",
     save_entry_error: "No se pudo guardar el cambio del movimiento. Verifica que la app esté abierta con `python3 server.py`.",
     reorder_entry_error: "No se pudo mover el movimiento. Verifica que la app esté abierta con `python3 server.py`.",
+    reorder_debt_error: "No se pudo mover la deuda. Verifica que la app esté abierta con `python3 server.py`.",
     create_entry_error: "No se pudo agregar el movimiento. Verifica que la app esté abierta con `python3 server.py`.",
     duplicate_entry_error: "No se pudo duplicar el movimiento. Verifica que la app esté abierta con `python3 server.py`.",
     delete_entry_error: "No se pudo eliminar el movimiento. Verifica que la app esté abierta con `python3 server.py`.",
@@ -920,6 +921,8 @@ const I18N = {
       "The movement change could not be saved. Make sure the app is running with `python3 server.py`.",
     reorder_entry_error:
       "The movement could not be reordered. Make sure the app is running with `python3 server.py`.",
+    reorder_debt_error:
+      "The debt could not be reordered. Make sure the app is running with `python3 server.py`.",
     create_entry_error:
       "The movement could not be added. Make sure the app is running with `python3 server.py`.",
     duplicate_entry_error:
@@ -1208,6 +1211,7 @@ const state = {
 
 let monthlyEntryDragState = null;
 let monthlyIncomeDragState = null;
+let debtDragState = null;
 let createIncomeAmountMode = "usd";
 let createIncomeFxUserEdited = false;
 let liveUsdCopRateRequest = null;
@@ -1246,6 +1250,11 @@ function init() {
   dom.monthlyEntriesTable.addEventListener("dragleave", handleMonthlyEntryDragLeave);
   dom.debtsTable?.addEventListener("change", handleDebtFieldChange);
   dom.debtsTable?.addEventListener("click", handleDebtStepperClick);
+  dom.debtsTable?.addEventListener("dragstart", handleDebtDragStart);
+  dom.debtsTable?.addEventListener("dragover", handleDebtDragOver);
+  dom.debtsTable?.addEventListener("drop", handleDebtDrop);
+  dom.debtsTable?.addEventListener("dragend", handleDebtDragEnd);
+  dom.debtsTable?.addEventListener("dragleave", handleDebtDragLeave);
   dom.addDebtButton?.addEventListener("click", openCreateDebtDialog);
   dom.debtDetailDialogBody?.addEventListener("change", handleDebtDetailFieldChange);
   dom.debtDetailDialogBody?.addEventListener("click", handleDebtDetailClick);
@@ -2157,7 +2166,20 @@ function renderDebtsTable(table, debts) {
       const progressWidth = Math.max(0, Math.min(progress, 100));
 
       return `
-        <tr>
+        <tr data-debt-row="true" data-debt-id="${escapeHtml(debt.id)}">
+          <td class="debt-cell debt-cell--move">
+            <button
+              class="entry-drag-handle"
+              type="button"
+              draggable="true"
+              title="${escapeHtml(t("move_drag_handle"))}"
+              aria-label="${escapeHtml(t("move_drag_handle"))}"
+              data-debt-drag-handle="true"
+              data-debt-id="${escapeHtml(debt.id)}"
+            >
+              <span class="entry-drag-handle__grip" aria-hidden="true"></span>
+            </button>
+          </td>
           <td class="debt-cell debt-cell--detail">
             <div class="entry-actions">
               <button
@@ -2213,6 +2235,7 @@ function renderDebtsTable(table, debts) {
   table.innerHTML = `
     <thead>
       <tr>
+        <th class="debt-cell--move"></th>
         <th>${renderDebtTableHeading(t("debt_table_detail"))}</th>
         <th>${renderDebtTableHeading(t("debt_table_debt"))}</th>
         <th>${renderDebtTableHeading(t("debt_table_monthly_fee"))}</th>
@@ -7232,6 +7255,112 @@ function handleMonthlyEntryDragEnd() {
   clearMonthlyEntryDropIndicators();
 }
 
+// The debts table shows either the active or the canceled ones, so rows are
+// addressed by debt id: their position on screen is not their position in the file.
+function clearDebtDropIndicators() {
+  dom.debtsTable?.querySelectorAll("tr[data-debt-row='true']").forEach((row) => {
+    row.classList.remove("is-drop-before", "is-drop-after", "is-dragging");
+  });
+}
+
+function getDebtDropContext(event) {
+  if (!debtDragState || !(event.target instanceof Element)) {
+    return null;
+  }
+
+  const row = event.target.closest("tr[data-debt-row='true']");
+  if (!(row instanceof HTMLTableRowElement)) {
+    return null;
+  }
+
+  const targetId = row.dataset.debtId;
+  if (!targetId || targetId === debtDragState.debtId) {
+    return null;
+  }
+
+  const rect = row.getBoundingClientRect();
+  const position = event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+  return { row, targetId, position };
+}
+
+function handleDebtDragStart(event) {
+  const handle = event.target.closest("[data-debt-drag-handle='true']");
+  if (!(handle instanceof HTMLButtonElement)) {
+    return;
+  }
+
+  const debtId = handle.dataset.debtId;
+  if (!debtId) {
+    event.preventDefault();
+    return;
+  }
+
+  debtDragState = { debtId };
+  handle.closest("tr[data-debt-row='true']")?.classList.add("is-dragging");
+
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", debtId);
+  }
+}
+
+function handleDebtDragOver(event) {
+  const context = getDebtDropContext(event);
+  clearDebtDropIndicators();
+
+  if (!context) {
+    return;
+  }
+
+  event.preventDefault();
+  const draggedRow = dom.debtsTable?.querySelector(
+    `tr[data-debt-row='true'][data-debt-id="${CSS.escape(debtDragState.debtId)}"]`,
+  );
+  draggedRow?.classList.add("is-dragging");
+  context.row.classList.add(context.position === "before" ? "is-drop-before" : "is-drop-after");
+}
+
+function handleDebtDragLeave(event) {
+  const relatedTarget = event.relatedTarget;
+  if (relatedTarget instanceof Node && dom.debtsTable?.contains(relatedTarget)) {
+    return;
+  }
+  clearDebtDropIndicators();
+}
+
+async function handleDebtDrop(event) {
+  const context = getDebtDropContext(event);
+  clearDebtDropIndicators();
+
+  if (!context || !debtDragState) {
+    debtDragState = null;
+    return;
+  }
+
+  event.preventDefault();
+  const { debtId } = debtDragState;
+  debtDragState = null;
+
+  try {
+    await reorderDebt({
+      debtId,
+      targetDebtId: context.targetId,
+      position: context.position,
+    });
+    state.signature = "";
+    await refreshDashboard({ force: true });
+    renderDebtSection();
+  } catch (error) {
+    console.error(error);
+    window.alert(t("reorder_debt_error"));
+  }
+}
+
+function handleDebtDragEnd() {
+  debtDragState = null;
+  clearDebtDropIndicators();
+}
+
 function buildDuplicateEntryPayload(entry) {
   return {
     paid: entry.paid,
@@ -8051,6 +8180,28 @@ async function reorderEntry({ path, entryIndex, targetIndex }) {
 
   if (!response.ok) {
     throw new Error(`Could not reorder ${path}`);
+  }
+
+  return response.json();
+}
+
+async function reorderDebt({ debtId, targetDebtId, position }) {
+  const path = debtDataPath();
+  const response = await fetch("/api/debts/reorder", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      path,
+      debt_id: debtId,
+      target_debt_id: targetDebtId,
+      position,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Could not reorder debts in ${path}`);
   }
 
   return response.json();

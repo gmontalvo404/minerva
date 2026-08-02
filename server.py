@@ -227,6 +227,9 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             if self.path == "/api/debts/create":
                 self._handle_create_debt()
                 return
+            if self.path == "/api/debts/reorder":
+                self._handle_reorder_debt()
+                return
             if self.path == "/api/debts/sync_cash_flow":
                 self._handle_sync_debt_cash_flow()
                 return
@@ -688,6 +691,54 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             return self._sync_auto_cash_flow_entries(debts)
         except Exception as error:  # noqa: BLE001
             return {"error": str(error)}
+
+    def _handle_reorder_debt(self) -> None:
+        """Move a debt next to another one.
+
+        Debts are addressed by id, not by index: the table shows only the
+        active or only the canceled ones, so what the user sees is a filtered
+        view and its positions do not match the file.
+        """
+        payload = self._read_json_body()
+        relative_path = payload.get("path", f"{DATA_URL_PREFIX}/debts/debts.json")
+        debt_id = str(payload["debt_id"])
+        target_id = str(payload["target_debt_id"])
+        position = str(payload.get("position", "before")).strip().lower()
+        if position not in {"before", "after"}:
+            raise ValueError("Position must be 'before' or 'after'")
+        if debt_id == target_id:
+            raise ValueError("A debt cannot be moved next to itself")
+
+        document, debts, target_path = self._load_debts(relative_path)
+
+        source_index = self._find_debt_index(debts, debt_id)
+        if source_index is None:
+            raise ValueError(f"Unknown debt: {debt_id}")
+
+        debt = debts.pop(source_index)
+        target_index = self._find_debt_index(debts, target_id)
+        if target_index is None:
+            debts.insert(source_index, debt)  # put it back, nothing moved
+            raise ValueError(f"Unknown debt: {target_id}")
+
+        debts.insert(target_index if position == "before" else target_index + 1, debt)
+        self._write_document(target_path, document)
+
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "ok": True,
+                "path": relative_path,
+                "order": [str(item.get("id", "")) for item in debts],
+            },
+        )
+
+    @staticmethod
+    def _find_debt_index(debts: list, debt_id: str) -> int | None:
+        for index, debt in enumerate(debts):
+            if isinstance(debt, dict) and str(debt.get("id", "")) == debt_id:
+                return index
+        return None
 
     def _handle_sync_debt_cash_flow(self) -> None:
         payload = self._read_json_body() if self.headers.get("Content-Length") else {}

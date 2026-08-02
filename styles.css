@@ -1687,6 +1687,28 @@ code {
   width: 92px;
 }
 
+.debt-cell--move {
+  width: 56px;
+  text-align: center;
+}
+
+.debt-cell--move .entry-drag-handle {
+  margin: 0 auto;
+}
+
+/* Same drop feedback as the movements table. */
+tbody tr[data-debt-row="true"].is-dragging td {
+  opacity: 0.54;
+}
+
+tbody tr[data-debt-row="true"].is-drop-before td {
+  box-shadow: inset 0 3px 0 var(--accent);
+}
+
+tbody tr[data-debt-row="true"].is-drop-after td {
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
 .debt-cell--name {
   min-width: 220px;
   white-space: normal;
