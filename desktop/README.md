@@ -9,6 +9,10 @@ and to open the dashboard in the browser you choose.
 - **Recargar**: turns it off and on again, which is also how a new port takes
   effect.
 - **Abrir**: opens the dashboard in the chosen browser whenever you want.
+- **React** (temporary): while the React rewrite in `web/` lives next to the old
+  dashboard, the app also starts the Vite dev server and **Abrir** opens both
+  tabs — `localhost:8123` and `localhost:5173`. Uncheck it to go back to just
+  the old one. This whole checkbox goes away with the old dashboard.
 - **Navegador**: only the browsers actually installed on the Mac show up.
 - **Puerto**: anything from 1024 up; `server.py` reads it as `MINERVA_PORT`. It
   sits behind the **Editar puerto** checkbox, so a stray click never moves it.
@@ -19,6 +23,19 @@ and to open the dashboard in the browser you choose.
 
 Editing either one leaves the running server alone and says what it is still
 using until you hit Recargar.
+- **The app always opens locked.** Every launch shows a lock screen and asks for
+  Touch ID before drawing anything, and **the server is not started until it
+  succeeds** — a lock that left `localhost` open would lock nothing. There is no
+  setting to turn this off: that is the point.
+
+  The prompt also accepts the Mac password, which is what keeps a wet finger or
+  a dead sensor from making the app unopenable. It is the same prompt macOS uses
+  to unlock the screen. If the macOS account has no password at all, nothing can
+  satisfy the gate; the way back in is to edit `MinervaApp.swift` and rebuild.
+
+  It gates *this app*, not the data: the JSON files stay readable to anyone
+  using your macOS account, and `python3 server.py` from a terminal still works.
+  For the files themselves, use FileVault or an encrypted disk image.
 - **Registro**: the server's own output, the same lines you would see in a
   terminal. **Ocultar peticiones** (on by default) drops the one-line-per-file
   noise the server prints for everything it serves fine — 200 and 304. Errors

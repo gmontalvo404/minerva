@@ -6,12 +6,18 @@
 // build.sh and can be re-pointed from the app if the repo ever moves.
 
 import AppKit
+import LocalAuthentication
 import SwiftUI
 
 // MARK: - Configuration
 
 enum Config {
     static let defaultPort: UInt16 = 8123
+
+    /// Where Vite serves the React rewrite while both versions coexist.
+    /// Temporary: it goes away with the old dashboard.
+    static let reactPort: UInt16 = 5173
+    static let reactURL = URL(string: "http://localhost:5173")!
 
     static func url(port: UInt16) -> URL {
         URL(string: "http://localhost:\(port)")!
@@ -178,6 +184,12 @@ final class ServerModel: ObservableObject {
         didSet { UserDefaults.standard.set(startOnLaunch, forKey: "startOnLaunch") }
     }
 
+    /// While the React rewrite lives next to the old dashboard, the app can run
+    /// both: the Python server and the Vite dev server. Temporary.
+    @Published var runReact: Bool = UserDefaults.standard.object(forKey: "runReact") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(runReact, forKey: "runReact") }
+    }
+
     /// The server logs every file it serves. Those lines bury the ones that
     /// actually say something, so they can be filtered out of the view.
     @Published var hideServedRequests: Bool = UserDefaults.standard.object(forKey: "hideServedRequests") as? Bool ?? true {
@@ -188,11 +200,54 @@ final class ServerModel: ObservableObject {
     /// accidental edit means the app stops finding the server.
     @Published var settingsUnlocked = false
 
+    /// Always locked on launch. Not a preference: there is no switch to turn it
+    /// off, so a stolen unlocked Mac still cannot read the finances from here.
+    /// The server stays off while this is true — a lock that leaves localhost
+    /// open locks nothing.
+    @Published private(set) var locked = true
+    @Published private(set) var unlockError: String?
+    @Published private(set) var unlocking = false
+
+    /// Whether the sensor is there. The gate does not depend on it — the Mac
+    /// password is always accepted — but the lock screen says which one to use.
+    static var biometricsAvailable: Bool {
+        LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+    }
+
+    /// Touch ID, with the Mac password as the way back in: a wet finger or a
+    /// broken sensor should not leave the app unopenable.
+    func unlock() {
+        guard locked, !unlocking else { return }
+        unlocking = true
+        unlockError = nil
+
+        let context = LAContext()
+        context.localizedCancelTitle = "Cancelar"
+        context.localizedFallbackTitle = "Usar contraseña"
+        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "abrir Minerva") { [weak self] granted, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.unlocking = false
+                if granted {
+                    self.locked = false
+                    self.unlockError = nil
+                    if self.startOnLaunch && !self.isUp { self.start() }
+                    return
+                }
+                let code = (error as? LAError)?.code
+                self.unlockError = code == .userCancel || code == .appCancel || code == .systemCancel
+                    ? nil
+                    : (error?.localizedDescription ?? "No se pudo verificar la huella.")
+            }
+        }
+    }
+
     @Published var dataPath: String = Config.dataPath {
         didSet { Config.dataPath = dataPath }
     }
 
     private var process: Process?
+    private var viteProcess: Process?
     private var timer: Timer?
     private var openWhenReady = false
     private var waitedForStart = 0
@@ -364,6 +419,7 @@ final class ServerModel: ObservableObject {
         activePort = port
         activeDataPath = dataPath
         state = .starting
+        startVite()
         waitedForStart = 0
         openWhenReady = true
         append("— iniciando \(python) server.py en el puerto \(port) —")
@@ -384,6 +440,7 @@ final class ServerModel: ObservableObject {
             }
             activePort = nil
             activeDataPath = dataPath
+            stopVite()
             start()
         }
     }
@@ -394,6 +451,7 @@ final class ServerModel: ObservableObject {
         if let task = process {
             task.terminate()
             process = nil
+            stopVite()
             state = .stopped
             return true
         }
@@ -418,15 +476,79 @@ final class ServerModel: ObservableObject {
         return true
     }
 
+    // MARK: The React rewrite, while both versions coexist
+
+    private var viteBinary: String { projectPath + "/web/node_modules/.bin/vite" }
+
+    /// Runs the Vite binary straight, not through npm: one process to start and
+    /// one to stop, with no wrapper left behind.
+    private func startVite() {
+        guard runReact, viteProcess == nil, !isPortListening(Config.reactPort) else { return }
+        guard FileManager.default.isExecutableFile(atPath: viteBinary) else {
+            append("— React sin instalar: corre `cd web && npm install` —")
+            return
+        }
+
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: viteBinary)
+        task.currentDirectoryURL = URL(fileURLWithPath: projectPath + "/web")
+
+        var environment = ProcessInfo.processInfo.environment
+        environment["MINERVA_BACKEND"] = url.absoluteString  // proxy /api to whatever port we serve on
+        // A GUI app inherits a bare PATH; the Vite binary needs to find node.
+        environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+        task.environment = environment
+
+        let output = Pipe()
+        task.standardOutput = output
+        task.standardError = output
+        output.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
+            Task { @MainActor in self?.append(text) }
+        }
+
+        task.terminationHandler = { [weak self] _ in
+            Task { @MainActor in self?.viteProcess = nil }
+        }
+
+        do {
+            try task.run()
+            viteProcess = task
+            append("— iniciando Vite para la versión React —")
+        } catch {
+            append("— no pude iniciar Vite: \(error.localizedDescription) —")
+        }
+    }
+
+    private func stopVite() {
+        guard let task = viteProcess else { return }
+        task.terminationHandler = nil
+        task.terminate()
+        viteProcess = nil
+    }
+
     func openInBrowser() {
+        // While both versions coexist, Abrir opens the two: the dashboard you
+        // use and the React rewrite. Uncheck "React" to stop that.
+        var targets = [url]
+        if runReact && isPortListening(Config.reactPort) {
+            targets.append(Config.reactURL)
+        }
+        open(targets)
+    }
+
+    private func open(_ targets: [URL]) {
         let browser = Browsers.named(browserID)
         let configuration = NSWorkspace.OpenConfiguration()
 
         if let bundleID = browser.bundleID,
            let application = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-            NSWorkspace.shared.open([url], withApplicationAt: application, configuration: configuration)
+            NSWorkspace.shared.open(targets, withApplicationAt: application, configuration: configuration)
         } else {
-            NSWorkspace.shared.open(url)
+            for target in targets {
+                NSWorkspace.shared.open(target)
+            }
         }
     }
 
@@ -480,6 +602,7 @@ final class ServerModel: ObservableObject {
 
     /// Called when the app quits: never leave an orphan server behind.
     func stopIfOwned() {
+        stopVite()
         guard let task = process else { return }
         task.terminationHandler = nil
         task.terminate()
@@ -592,19 +715,70 @@ struct ContentView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header
-            actions
-            settings
-            if let message = model.errorMessage {
-                errorBanner(message)
+        Group {
+            if model.locked {
+                lockScreen
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    header
+                    actions
+                    settings
+                    if let message = model.errorMessage {
+                        errorBanner(message)
+                    }
+                    logPane
+                }
             }
-            logPane
         }
         .padding(18)
         .frame(minWidth: 600, minHeight: 400)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { pulse = true }
+    }
+
+    // MARK: Lock
+
+    /// Nothing of the dashboard is drawn while this is up, and the server has
+    /// not been started either.
+    private var lockScreen: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            AppMark()
+
+            Text("Minerva está bloqueada")
+                .font(.system(size: 19, weight: .semibold))
+            Text(ServerModel.biometricsAvailable
+                ? "Usá tu huella para abrirla."
+                : "Usá la contraseña de tu Mac para abrirla.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            Button {
+                model.unlock()
+            } label: {
+                Label(
+                    model.unlocking
+                        ? (ServerModel.biometricsAvailable ? "Esperando la huella…" : "Esperando la contraseña…")
+                        : "Desbloquear",
+                    systemImage: ServerModel.biometricsAvailable ? "touchid" : "lock"
+                )
+                    .frame(minWidth: 190)
+            }
+            .controlSize(.large)
+            .buttonStyle(.borderedProminent)
+            .disabled(model.unlocking)
+            .keyboardShortcut(.defaultAction)
+
+            if let message = model.unlockError {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+        .onAppear { model.unlock() }
     }
 
     // MARK: Header
@@ -706,6 +880,11 @@ struct ContentView: View {
             Toggle("Encender al abrir", isOn: $model.startOnLaunch)
                 .toggleStyle(.checkbox)
                 .font(.callout)
+
+            Toggle("React", isOn: $model.runReact)
+                .toggleStyle(.checkbox)
+                .font(.callout)
+                .help("Temporal: levanta Vite y Abrir lanza también la versión React")
         }
     }
 
@@ -900,13 +1079,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         print("browsers=\(Browsers.installed().map(\.name).joined(separator: ", "))")
         print("port=\(model.currentPort) listening=\(isPortListening(model.currentPort))")
         print("startOnLaunch=\(model.startOnLaunch)")
+        print("runReact=\(model.runReact) reactListening=\(isPortListening(Config.reactPort))")
         print("dataPath=\(model.dataPath.isEmpty ? "(la del proyecto)" : model.dataPath)")
+        print("locked=\(model.locked) biometricsAvailable=\(ServerModel.biometricsAvailable)")
         exit(0)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+
+        // Nothing starts until the fingerprint says so: unlock() is what turns
+        // the server on afterwards.
+        guard !model.locked else { return }
 
         // Opening the app is the same intent as running `python3 server.py`:
         // turn it on and show the dashboard. Unless something is already up.
