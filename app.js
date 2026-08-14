@@ -1302,6 +1302,7 @@ function init() {
   dom.createDebtForm?.addEventListener("submit", handleCreateDebtSubmit);
   dom.creditSimulatorForm?.addEventListener("input", handleCreditSimulatorInput);
   dom.creditSimulatorForm?.addEventListener("change", handleCreditSimulatorInput);
+  dom.creditSimulatorForm?.addEventListener("keydown", handleCreditSimulatorKeyDown);
   dom.creditSimulatorCurrency?.addEventListener("click", handleCreditSimulatorClick);
   dom.creditSimulatorTable?.addEventListener("click", handleCreditSimulatorClick);
   document.addEventListener("visibilitychange", handleNutritionVisibilityReread);
@@ -4330,7 +4331,55 @@ function handleDebtDetailClick(event) {
   }
 }
 
-function handleCreditSimulatorInput() {
+/**
+ * Keeps digits and, where they make sense, a single decimal separator.
+ *
+ * The simulator fields are `type="text"`, so nothing stops a letter from
+ * landing in them. Stripping it on the way in keeps the caret where it was:
+ * whatever we removed sat before it.
+ */
+function keepNumericValue(input, { decimals = true } = {}) {
+  if (!(input instanceof HTMLInputElement) || input.type === "number") {
+    return;
+  }
+
+  const typed = input.value;
+  let cleaned = typed.replace(decimals ? /[^\d.,]/g : /\D/g, "");
+  if (decimals) {
+    const separator = cleaned.search(/[.,]/);
+    if (separator !== -1) {
+      cleaned = cleaned.slice(0, separator + 1) + cleaned.slice(separator + 1).replace(/[.,]/g, "");
+    }
+  }
+
+  if (cleaned === typed) {
+    return;
+  }
+
+  const caret = input.selectionStart;
+  input.value = cleaned;
+  if (caret !== null) {
+    const position = Math.max(0, caret - (typed.length - cleaned.length));
+    input.setSelectionRange(position, position);
+  }
+}
+
+/**
+ * The term is a number input: the browser lets "e" and the signs through, and
+ * those are the only letters that could reach it.
+ */
+function handleCreditSimulatorKeyDown(event) {
+  if (event.target instanceof HTMLInputElement
+    && event.target.type === "number"
+    && ["e", "E", "+", "-"].includes(event.key)) {
+    event.preventDefault();
+  }
+}
+
+function handleCreditSimulatorInput(event) {
+  keepNumericValue(event?.target, {
+    decimals: event?.target?.name !== "term_months",
+  });
   renderCreditSimulator();
 }
 
