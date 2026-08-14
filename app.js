@@ -65,7 +65,20 @@ const AVAILABLE_DEBT_VIEWS = new Set(["active", "canceled"]);
 const NUTRITION_TABS = ["rules", "plan", "ingredients", "breakfast", "lunch", "dinner", "snack"];
 const NUTRITION_MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"];
 let nutritionSaveTimer = 0;
+let nutritionSaveInFlight = false;
+let nutritionSaveQueued = false;
 let nutritionMealDraft = null; // { type, id: string|null, name, description, items: [{ingredient, qty}] }
+
+/** Everything /api/nutrition/shopping returns, before it has answered. */
+const EMPTY_NUTRITION_COSTS = {
+  lines: [],
+  total: 0,
+  mealCosts: {},
+  weeklyCost: 0,
+  dailyAverage: 0,
+  assignedMeals: 0,
+  totalSlots: 0,
+};
 
 const DEFAULT_CREDIT_SIMULATION = {
   capital: 20_000_000,
@@ -207,6 +220,7 @@ const I18N = {
     nutrition_shopping_total: "Total estimado",
     nutrition_shopping_hint: "Edita el precio unitario para ajustar el estimado.",
     nutrition_shopping_empty: "Asigna comidas al plan para ver la lista de compras.",
+    nutrition_conflict: "El plan cambió en otra pestaña; recargué la versión nueva. Repite tu último cambio.",
     nutrition_plan_table_title: "Plan de la semana",
     nutrition_plan_day_total: "Total día",
     nutrition_random_week: "Randomizar semana",
@@ -613,6 +627,7 @@ const I18N = {
     nutrition_shopping_total: "Estimated total",
     nutrition_shopping_hint: "Edit the unit price to adjust the estimate.",
     nutrition_shopping_empty: "Assign meals to the plan to see the shopping list.",
+    nutrition_conflict: "The plan changed in another tab; reloaded the newer version. Redo your last change.",
     nutrition_plan_table_title: "The week's plan",
     nutrition_plan_day_total: "Day total",
     nutrition_random_week: "Randomize week",
@@ -1192,6 +1207,8 @@ const state = {
   appMode: getInitialAppMode(),
   debtView: getInitialDebtView(),
   debtItems: [],
+  /** The same debts, priced by server.py, as /api/debts/detail returns them. */
+  debtDetails: [],
   debtDetailCurrency: "cop",
   debtDetailPeriodSortDirection: "asc",
   creditSimulatorCurrency: "cop",
@@ -1206,6 +1223,8 @@ const state = {
   liveUsdCopRate: getInitialLiveUsdCopRate(),
   nutritionPlan: null,
   nutritionPlanLoading: false,
+  nutritionPlanHash: null,
+  nutritionCosts: EMPTY_NUTRITION_COSTS,
   entryDebtLinkTarget: null,
 };
 
@@ -1232,7 +1251,6 @@ function init() {
   setupPrettySelectInteractions();
   attachNumericInputGuards();
   dom.monthlyIncomesTable.addEventListener("change", handleMonthlyIncomeFieldChange);
-  dom.monthlyIncomesTable.addEventListener("input", handleMonthlyIncomeFieldInput);
   dom.monthlyIncomesTable.addEventListener("click", handleMonthlyIncomeActions);
   dom.addIncomeButton?.addEventListener("click", openCreateIncomeDialog);
   dom.monthlyIncomesTable.addEventListener("dragstart", handleMonthlyIncomeDragStart);
@@ -1286,6 +1304,8 @@ function init() {
   dom.creditSimulatorForm?.addEventListener("change", handleCreditSimulatorInput);
   dom.creditSimulatorCurrency?.addEventListener("click", handleCreditSimulatorClick);
   dom.creditSimulatorTable?.addEventListener("click", handleCreditSimulatorClick);
+  document.addEventListener("visibilitychange", handleNutritionVisibilityReread);
+  window.addEventListener("focus", handleNutritionVisibilityReread);
   document.addEventListener("click", handleEntryActionsDocumentClick);
   document.addEventListener("click", handleDebtActionsDocumentClick);
   document.addEventListener("keydown", handleEntryActionsKeyDown);
@@ -1403,18 +1423,15 @@ function init() {
     createIncomeAmountMode = "usd";
     dom.createIncomeUsd?.setCustomValidity("");
     dom.createIncomeCop?.setCustomValidity("");
-    syncCreateIncomeAmounts("usd");
   });
   dom.createIncomeFx?.addEventListener("input", () => {
     createIncomeFxUserEdited = true;
     dom.createIncomeFx?.setCustomValidity("");
-    syncCreateIncomeAmounts(createIncomeAmountMode);
   });
   dom.createIncomeCop?.addEventListener("input", () => {
     createIncomeAmountMode = "cop";
     dom.createIncomeUsd?.setCustomValidity("");
     dom.createIncomeCop?.setCustomValidity("");
-    syncCreateIncomeAmounts("cop");
   });
   dom.createIncomeCancel?.addEventListener("click", closeCreateIncomeDialog);
   dom.createIncomeClose?.addEventListener("click", closeCreateIncomeDialog);
@@ -1538,15 +1555,18 @@ async function refreshDashboard({ force = false } = {}) {
 
     const raw = await loadFinanceData(state.selectedYear);
     state.debtItems = normalizeDebtItems(raw.debtData);
+    state.debtDetails = await loadDebtDetails();
+    const aggregated = await loadDashboardPayload(state.selectedYear);
     const signature = JSON.stringify({
       availableYears: state.availableYears,
       selectedYear: state.selectedYear,
       raw,
+      aggregated,
     });
 
     if (force || signature !== state.signature) {
       state.signature = signature;
-      state.dashboard = buildDashboard(raw, state.selectedYear);
+      state.dashboard = adaptDashboard(aggregated, raw, state.selectedYear);
       renderShellMetadata();
       renderDashboard();
     }
@@ -1554,6 +1574,65 @@ async function refreshDashboard({ force = false } = {}) {
     console.error(error);
     renderLoadError(error);
   }
+}
+
+/**
+ * The debts, priced by server.py.
+ *
+ * They used to be amortized here, which is why this app and the React one
+ * could disagree on whether a debt was canceled: this one only read the
+ * movements of the year on screen. Now both ask the same endpoint.
+ */
+async function loadDebtDetails() {
+  try {
+    const response = await fetch(
+      `/api/debts/detail?path=${encodeURIComponent(debtDataPath())}&ts=${Date.now()}`,
+      { cache: "no-store" },
+    );
+    if (!response.ok) {
+      return [];
+    }
+    const payload = await response.json();
+    return Array.isArray(payload?.debts) ? payload.debts : [];
+  } catch (error) {
+    console.warn("Could not load the priced debts.", error);
+    return [];
+  }
+}
+
+/** The shape the debt views read, from what the server already computed. */
+function adaptDebtDetail(detail, baseDebt) {
+  return {
+    ...baseDebt,
+    id: detail.id,
+    capital: detail.capital,
+    initialInvestment: detail.initial_investment,
+    financedCapital: detail.financed_capital,
+    insurance: detail.insurance,
+    otherCharges: detail.other_charges,
+    annualInterestRate: detail.annual_interest_rate,
+    annualInterestRateRaw: String(
+      baseDebt?.annualInterestRateRaw ?? formatNumberForInput(detail.annual_interest_rate),
+    ),
+    termMonths: detail.term_months,
+    effectiveTermMonths: detail.effective_term_months,
+    paidInstallments: detail.paid_installments,
+    remainingInstallments: detail.remaining_installments,
+    remainingBalance: detail.remaining_balance,
+    paidBalance: normalizeCop(detail.financed_capital - detail.remaining_balance),
+    actualPayment: detail.monthly_payment,
+    monthlyFee: detail.monthly_payment,
+    progress: detail.progress,
+    abonoStrategy: detail.abono_strategy,
+    cashFlowLink: detail.cash_flow_link
+      ? {
+          ...detail.cash_flow_link,
+          startYear: detail.cash_flow_link.start_year,
+          startMonth: detail.cash_flow_link.start_month,
+        }
+      : null,
+    serverDetail: detail,
+  };
 }
 
 async function discoverAvailableYears() {
@@ -1579,48 +1658,9 @@ async function loadFinanceData(year) {
     fetchJson(debtDataPath(), { optional: true, fallback: { debts: [] } }),
   ]);
 
-  const monthPayloads = await Promise.all(
-    MONTHS.map(async (month) => {
-      const unifiedPath = `${cashFlowDataRoot()}/${year}/outcomes/${month.folder}.json`;
-      const unifiedPayload = await fetchJson(unifiedPath, { optional: true, fallback: null });
-      if (unifiedPayload && Array.isArray(unifiedPayload.entries)) {
-        return [
-          month.folder,
-          {
-            sourcePath: unifiedPath,
-            unified: unifiedPayload,
-          },
-        ];
-      }
-
-      const files = await Promise.all(
-        TYPE_ORDER.map(async (typeKey) => {
-          const payload = await fetchJson(
-            `${cashFlowDataRoot()}/${year}/outcomes/${month.folder}/${typeKey}.json`,
-            { optional: true, fallback: { entries: [] } },
-          );
-          return [typeKey, payload];
-        }),
-      );
-
-      return [
-        month.folder,
-        {
-          sourcePath: null,
-          byType: Object.fromEntries(files),
-        },
-      ];
-    }),
-  );
-
-  return {
-    incomeData,
-    sharedCategories,
-    sharedTypes,
-    sharedCurrencies,
-    debtData,
-    outcomes: Object.fromEntries(monthPayloads),
-  };
+  // The month files are not read here any more: /api/dashboard returns them
+  // already added up, and reading them again was how the two apps drifted.
+  return { incomeData, sharedCategories, sharedTypes, sharedCurrencies, debtData };
 }
 
 function normalizeDebtItems(payload) {
@@ -1818,192 +1858,113 @@ async function fetchJson(path, options = {}) {
   return response.json();
 }
 
-function buildDashboard(raw, year) {
-  const incomeByMonth = buildIncomeMonthLookup(raw.incomeData.months || []);
+/**
+ * The dashboard, from what server.py already aggregated.
+ *
+ * This used to walk the twelve month files and add everything up here, which is
+ * why this app and the React one could show different totals for the same year.
+ * Now both read /api/dashboard and only shape it for the screen.
+ */
+function adaptDashboard(payload, raw, year) {
   const incomeSourcePath = `${cashFlowDataRoot()}/${year}/incomes/incomes.json`;
+  const serverMonths = Array.isArray(payload?.months) ? payload.months : [];
 
   const months = MONTHS.map((month) => {
-    const monthIncome = incomeByMonth.get(month.folder) || incomeByMonth.get(month.name.toLowerCase()) || {};
-    const incomeEntries = normalizeIncomeEntries(monthIncome, incomeSourcePath, month.index);
-    const incomeCop = normalizeCop(sum(incomeEntries.map((entry) => entry.amountCop)));
-    const incomeUsd = normalizeUsd(sum(incomeEntries.map((entry) => entry.amountUsd)));
-    const usdCop = incomeUsd > 0 ? normalizeRate(incomeCop / incomeUsd) : 0;
-    const monthOutcomes = raw.outcomes[month.folder] || {};
-    const hasUnifiedOutcomes = Array.isArray(monthOutcomes?.unified?.entries);
-    const unifiedSourcePath = typeof monthOutcomes?.sourcePath === "string" ? monthOutcomes.sourcePath : "";
-    const types = {};
-    const sourcePathByType = Object.fromEntries(
-      TYPE_ORDER.map((typeKey) => [
-        typeKey,
-        hasUnifiedOutcomes
-          ? unifiedSourcePath
-          : `${cashFlowDataRoot()}/${year}/outcomes/${month.folder}/${typeKey}.json`,
-      ]),
+    const data = serverMonths[month.index] || {};
+    const sourcePathByType = data.source_path_by_type || {};
+    const incomeEntries = normalizeIncomeEntries(
+      { entries: data.incomes || [] },
+      incomeSourcePath,
+      month.index,
     );
-    const rawEntries = [];
 
-    if (hasUnifiedOutcomes) {
-      const normalizedUnifiedEntries = monthOutcomes.unified.entries
-        .map((entry, entryIndex) => {
-          const typeKey = normalizeOutcomeType(entry?.type);
-          if (!typeKey) {
-            return null;
-          }
+    const entries = (data.entries || []).map((entry) => {
+      const typeKey = normalizeOutcomeType(entry?.type) || TYPE_ORDER[0];
+      const descriptionRaw = typeof entry.description === "string" ? entry.description : "";
+      const categoryRaw = typeof entry.category === "string" ? entry.category : "";
 
-          const normalizedEntry = {
-            typeKey,
-            description: entry.description || t("no_description"),
-            descriptionRaw: typeof entry.description === "string" ? entry.description : "",
-            category: entry.category || t("uncategorized"),
-            categoryRaw: typeof entry.category === "string" ? entry.category : "",
-            amountCop: normalizeCop(entry.amount_cop),
-            amountUsd: usdCop > 0 ? normalizeUsd(entry.amount_cop / usdCop) : 0,
-            paid: resolveFlag(entry, "paid", "active"),
-            createdAt: typeof entry.created_at === "string" ? entry.created_at : "",
-            updatedAt: typeof entry.updated_at === "string" ? entry.updated_at : "",
-            history: Array.isArray(entry.history) ? entry.history : [],
-            sourcePath: sourcePathByType[typeKey],
-            sourceIndex: entryIndex,
-            recordKind: "outcome",
-            autoGenerated: entry.auto_generated === true,
-            linkedDebts: Array.isArray(entry.linked_debts) ? entry.linked_debts.map(String) : [],
-            extraPayment: entry.extra_payment === true,
-          };
-
-          return {
-            ...normalizedEntry,
-            isFreeAllocation: isFreeAllocationEntry(normalizedEntry),
-          };
-        })
-        .filter(Boolean);
-
-      rawEntries.push(...normalizedUnifiedEntries);
-    } else {
-      TYPE_ORDER.forEach((typeKey) => {
-        const payload = monthOutcomes?.byType?.[typeKey];
-        const normalizedEntries = (payload?.entries || [])
-          .map((entry, entryIndex) => {
-            const normalizedEntry = {
-              typeKey,
-              description: entry.description || t("no_description"),
-              descriptionRaw: typeof entry.description === "string" ? entry.description : "",
-              category: entry.category || t("uncategorized"),
-              categoryRaw: typeof entry.category === "string" ? entry.category : "",
-              amountCop: normalizeCop(entry.amount_cop),
-              amountUsd: usdCop > 0 ? normalizeUsd(entry.amount_cop / usdCop) : 0,
-              paid: resolveFlag(entry, "paid", "active"),
-              createdAt: typeof entry.created_at === "string" ? entry.created_at : "",
-              updatedAt: typeof entry.updated_at === "string" ? entry.updated_at : "",
-              history: Array.isArray(entry.history) ? entry.history : [],
-              sourcePath: sourcePathByType[typeKey],
-              sourceIndex: entryIndex,
-              recordKind: "outcome",
-              autoGenerated: entry.auto_generated === true,
-              linkedDebts: Array.isArray(entry.linked_debts) ? entry.linked_debts.map(String) : [],
-              extraPayment: entry.extra_payment === true,
-            };
-
-            return {
-              ...normalizedEntry,
-              isFreeAllocation: isFreeAllocationEntry(normalizedEntry),
-            };
-          });
-
-        rawEntries.push(...normalizedEntries);
-      });
-    }
-
-    TYPE_ORDER.forEach((typeKey) => {
-      const typeEntries = rawEntries.filter((entry) => entry.typeKey === typeKey);
-      const nonFreeEntries = typeEntries.filter((entry) => !entry.isFreeAllocation);
-      types[typeKey] = {
-        total: normalizeCop(sum(nonFreeEntries.map((entry) => entry.amountCop))),
-        entries: typeEntries,
+      return {
+        typeKey,
+        description: descriptionRaw || t("no_description"),
+        descriptionRaw,
+        category: categoryRaw || t("uncategorized"),
+        categoryRaw,
+        amountCop: normalizeCop(entry.amount_cop),
+        amountUsd: toNumber(entry.amount_usd),
+        paid: entry.paid === true,
+        createdAt: typeof entry.created_at === "string" ? entry.created_at : "",
+        updatedAt: typeof entry.updated_at === "string" ? entry.updated_at : "",
+        history: Array.isArray(entry.history) ? entry.history : [],
+        sourcePath: entry.source_path || sourcePathByType[typeKey] || "",
+        sourceIndex: toNumber(entry.source_index),
+        recordKind: "outcome",
+        autoGenerated: entry.auto_generated === true,
+        linkedDebts: Array.isArray(entry.linked_debts) ? entry.linked_debts.map(String) : [],
+        extraPayment: entry.extra_payment === true,
+        isFreeAllocation: false,
       };
     });
 
-    const plannedEntries = rawEntries.filter((entry) => !entry.isFreeAllocation);
-    const typeTotals = Object.fromEntries(
-      TYPE_ORDER.map((typeKey) => [typeKey, types[typeKey].total]),
-    );
-    const totalOutcomes = normalizeCop(sum(plannedEntries.map((entry) => entry.amountCop)));
-    const paidOutcomes = normalizeCop(
-      sum(plannedEntries.filter((entry) => entry.paid).map((entry) => entry.amountCop)),
-    );
-    const free = normalizeCop(incomeCop - totalOutcomes);
-    const displayEntries = free > 0 ? [...plannedEntries, buildFreeDisplayEntry(free)] : plannedEntries;
-    const displayTypes = buildMonthlyDisplayTypes(typeTotals, free);
+    const byType = data.by_type || {};
+    const displayTypes = data.display_types || {};
+    const free = toNumber(data.free);
 
     return {
       ...month,
       sourcePathByType,
       incomeSourcePath,
-      incomeCop,
-      incomeUsd,
-      usdCop,
+      incomeCop: toNumber(data.income_cop),
+      incomeUsd: toNumber(data.income_usd),
+      usdCop: toNumber(data.usd_cop),
       incomeEntries: [...incomeEntries].sort(compareIncomeEntries),
-      totalOutcomes,
+      totalOutcomes: toNumber(data.total_outcomes),
       free,
-      types,
-      entries: [...plannedEntries].sort(compareEntries),
-      allEntries: [...plannedEntries].sort(compareEntries),
-      paidOutcomes,
-      categoryTotals: aggregateBy(displayEntries, "category"),
-      displayTypes,
+      types: Object.fromEntries(
+        TYPE_ORDER.map((typeKey) => [typeKey, { total: toNumber(byType[typeKey]) }]),
+      ),
+      entries,
+      allEntries: entries,
+      paidOutcomes: toNumber(data.paid_outcomes),
+      afterPaid: toNumber(data.after_paid),
+      // The budget table and the annual columns arrive priced from the server,
+      // so neither app divides by an FX rate on its own.
+      summaryRows: Array.isArray(data.summary_rows) ? data.summary_rows : [],
+      usd: data.usd || {},
+      categoryTotals: (data.by_category || []).map((item) => ({
+        key: item.category,
+        total: toNumber(item.total),
+      })),
+      displayTypes: Object.fromEntries(
+        TYPE_ORDER.map((typeKey) => [typeKey, toNumber(displayTypes[typeKey])]),
+      ),
       segments: buildMonthlySegments(displayTypes, free),
     };
   });
 
-  const annualTypeTotals = TYPE_ORDER.reduce((accumulator, typeKey) => {
-    accumulator[typeKey] = normalizeCop(sum(months.map((month) => month.displayTypes[typeKey])));
-    return accumulator;
-  }, {});
-
-  const annualDisplayEntries = months.flatMap((month) => {
-    const entries = month.entries.map((entry) => ({
-      ...entry,
-      monthLabel: month.name,
-    }));
-
-    if (month.free > 0) {
-      entries.push({
-        ...buildFreeDisplayEntry(month.free),
-        monthLabel: month.name,
-      });
-    }
-
-    return entries;
-  });
-
+  const serverAnnual = payload?.annual || {};
   const annual = {
     year,
-    totalIncomeCop: normalizeCop(sum(months.map((month) => month.incomeCop))),
-    totalIncomeUsd: sum(months.map((month) => month.incomeUsd)),
-    totalOutcomes: normalizeCop(sum(months.map((month) => month.totalOutcomes))),
-    totalFree: normalizeCop(sum(months.map((month) => month.free))),
-    averageFree: normalizeCop(average(months.map((month) => month.free))),
-    averageFx: average(months.map((month) => month.usdCop)),
-    annualTypeTotals,
-    annualCategoryTotals: aggregateBy(annualDisplayEntries, "category"),
-    categoriesCount: (raw.sharedCategories.categories || []).length,
+    totalIncomeCop: toNumber(serverAnnual.income_cop),
+    totalIncomeUsd: toNumber(serverAnnual.income_usd),
+    totalOutcomes: toNumber(serverAnnual.total_outcomes),
+    totalFree: toNumber(serverAnnual.free),
+    averageFree: toNumber(serverAnnual.average_free),
+    averageFx: toNumber(serverAnnual.average_fx),
+    annualTypeTotals: Object.fromEntries(
+      TYPE_ORDER.map((typeKey) => [typeKey, toNumber((serverAnnual.display_types || {})[typeKey])]),
+    ),
+    annualCategoryTotals: (serverAnnual.by_category || []).map((item) => ({
+      key: item.category,
+      total: toNumber(item.total),
+    })),
+    categoriesCount: toNumber(serverAnnual.categories_count),
+    /** The total column of the annual table, in both currencies. */
+    totals: serverAnnual.totals || {},
     currencies: raw.sharedCurrencies.currencies || [],
     types: raw.sharedTypes.types || [],
   };
 
   return { raw, annual, months };
-}
-
-function buildIncomeMonthLookup(monthEntries) {
-  const lookup = new Map();
-  monthEntries.forEach((entry) => {
-    [entry.month_id, entry.month, entry.folder, entry.name].forEach((key) => {
-      const normalizedKey = String(key || "").trim().toLowerCase();
-      if (normalizedKey && !lookup.has(normalizedKey)) {
-        lookup.set(normalizedKey, entry);
-      }
-    });
-  });
-  return lookup;
 }
 
 function resolveFlag(entry, primaryKey, legacyKey, fallback = true) {
@@ -2098,7 +2059,7 @@ function renderAnnualSection(annual, months) {
     t("active_outcomes_label"),
   );
   renderBarList(dom.annualCategoryBars, annual.annualCategoryTotals);
-  renderAnnualTable(dom.annualSummaryTable, months);
+  renderAnnualTable(dom.annualSummaryTable, months, annual.totals);
 }
 
 function renderMonthlySection(month) {
@@ -2406,15 +2367,6 @@ function populateDebtLinkMonthOptions(debt) {
     : fallbackMonth;
 }
 
-async function getDebtLinkDashboard(year) {
-  if (year === state.selectedYear && state.dashboard) {
-    return state.dashboard;
-  }
-
-  const raw = await loadFinanceData(year);
-  return buildDashboard(raw, year);
-}
-
 async function renderDebtLinkCurrent(debt) {
   if (!dom.debtLinkCurrent) {
     return;
@@ -2444,7 +2396,7 @@ async function renderDebtLinkCurrent(debt) {
 
   let matches = [];
   try {
-    matches = await buildDebtLinkedPaymentsAcrossYears(debt);
+    matches = await fetchDebtLinkedPayments(debt.id);
   } catch (error) {
     console.error(error);
     matches = [];
@@ -2484,114 +2436,33 @@ async function renderDebtLinkCurrent(debt) {
   }
 }
 
-async function buildDebtLinkedPaymentsAcrossYears(debt) {
-  const link = debt.cashFlowLink;
-  if (!link) {
+/** GET /api/dashboard: the year already aggregated by server.py. */
+async function loadDashboardPayload(year) {
+  const query = new URLSearchParams({ path: cashFlowDataRoot(), year: String(year || "") });
+  const response = await fetch(`/api/dashboard?${query}&ts=${Date.now()}`, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error("Could not load the dashboard");
+  }
+  return response.json();
+}
+
+/** GET /api/debts/links: every movement of the plan, whatever year it is in. */
+async function fetchDebtLinkedPayments(debtId) {
+  const query = new URLSearchParams({ path: debtDataPath(), debt_id: String(debtId) });
+  const response = await fetch(`/api/debts/links?${query}`, { cache: "no-store" });
+  if (!response.ok) {
     return [];
   }
-
-  const startYearNumber = Number(link.startYear || link.start_year);
-  const termMonths = Math.max(0, Number(debt.termMonths) || 0);
-  if (!Number.isInteger(startYearNumber) || termMonths <= 0) {
-    return [];
-  }
-
-  const startMonthIndex = getMonthIndexFromFolder(link.startMonth || link.start_month);
-  if (startMonthIndex < 0) {
-    return [];
-  }
-
-  const lastMonthAbsolute = startMonthIndex + termMonths - 1;
-  const endYearNumber = startYearNumber + Math.floor(lastMonthAbsolute / 12);
-  const linkedDebts = getDebtsSharingCashFlowLink(link);
-
-  const matches = [];
-  for (let year = startYearNumber; year <= endYearNumber; year += 1) {
-    const yearKey = String(year);
-    let dashboard = null;
-    try {
-      dashboard = await getDebtLinkDashboard(yearKey);
-    } catch (error) {
-      console.warn(`Could not load dashboard for ${yearKey}.`, error);
-      continue;
-    }
-
-    if (!dashboard?.months?.length) {
-      continue;
-    }
-
-    dashboard.months.forEach((month) => {
-      const period = getDebtCashFlowPeriod(link, month, yearKey);
-      if (period > termMonths) {
-        return;
-      }
-
-      const linkedEntries = month.allEntries.filter((entry) => isDebtLinkedCashFlowEntry(entry, link, debt.id));
-      if (!linkedEntries.length) {
-        return;
-      }
-
-      const regularEntries = linkedEntries.filter((entry) => !isDebtCashFlowAbono(entry));
-      const abonoEntries = linkedEntries.filter((entry) => isDebtCashFlowAbono(entry));
-
-      if (period <= 0) {
-        if (!abonoEntries.length) {
-          return;
-        }
-        const abonoAmountCop = sum(abonoEntries.map((entry) => entry.amountCop));
-        const allocatedAbono = allocateSharedDebtPayment({
-          debt,
-          linkedDebts,
-          period: 1,
-          amountCop: abonoAmountCop,
-        });
-        if (allocatedAbono <= 0) {
-          return;
-        }
-        matches.push({
-          period: 0,
-          preSchedule: true,
-          amountCop: 0,
-          abonoAmountCop: allocatedAbono,
-          paid: abonoEntries.some((entry) => entry.paid),
-          monthIndex: month.index,
-          year: yearKey,
-        });
-        return;
-      }
-
-      const regularAmountCop = sum(regularEntries.map((entry) => entry.amountCop));
-      const abonoAmountCop = sum(abonoEntries.map((entry) => entry.amountCop));
-
-      const allocatedRegular = allocateSharedDebtPayment({
-        debt,
-        linkedDebts,
-        period,
-        amountCop: regularAmountCop,
-      });
-      const allocatedAbono = allocateSharedDebtPayment({
-        debt,
-        linkedDebts,
-        period,
-        amountCop: abonoAmountCop,
-      });
-      if (allocatedRegular <= 0 && allocatedAbono <= 0) {
-        return;
-      }
-
-      matches.push({
-        period,
-        amountCop: allocatedRegular,
-        abonoAmountCop: allocatedAbono,
-        paid: regularEntries.some((entry) => entry.paid) || abonoEntries.some((entry) => entry.paid),
-        monthIndex: month.index,
-        year: yearKey,
-      });
-    });
-  }
-
-  matches.sort((a, b) => a.period - b.period);
-  return matches;
+  const payload = await response.json();
+  return (payload.payments || []).map((payment) => ({
+    period: payment.period,
+    preSchedule: payment.pre_schedule,
+    amountCop: payment.amount_cop,
+    abonoAmountCop: payment.abono_amount_cop,
+    paid: payment.paid,
+    monthIndex: payment.month_index,
+    year: payment.year,
+  }));
 }
 
 async function handleDebtLinkClear() {
@@ -2625,17 +2496,6 @@ async function handleDebtLinkClear() {
       control.disabled = false;
     });
   }
-}
-
-function isSameDebtCashFlowLink(left, right) {
-  if (!left || !right) {
-    return false;
-  }
-
-  return normalizeDebtLinkText(left.description) === normalizeDebtLinkText(right.description)
-    && String(left.type || "") === String(right.type || "")
-    && String(left.start_year || left.startYear || "") === String(right.startYear || right.start_year || "")
-    && String(left.start_month || left.startMonth || "") === String(right.startMonth || right.start_month || "");
 }
 
 async function handleDebtLinkSubmit(event) {
@@ -2843,7 +2703,10 @@ async function handleCreateDebtSubmit(event) {
 }
 
 function renderDebtDetailDialog(debt) {
-  const detail = buildDebtDetail(debt);
+  if (!debt.serverDetail) {
+    return;
+  }
+  const detail = adaptServerSchedule(debt.serverDetail);
   const scheduleRows = getDebtDetailScheduleRows(detail.schedule);
   const formatDebtAmount = (amountCop) => formatDebtDetailCurrency(amountCop);
 
@@ -2939,6 +2802,21 @@ function renderDebtDetailDialog(debt) {
   `;
 }
 
+/**
+ * FNV-1a over the UTF-8 bytes, matching _content_hash in server.py. Every save
+ * names the file version it was based on; the server refuses a save whose base
+ * is no longer the file, so a stale tab cannot resurrect an old plan.
+ */
+function nutritionContentHash(text) {
+  const bytes = new TextEncoder().encode(text);
+  let value = 0x811c9dc5;
+  bytes.forEach((byte) => {
+    value ^= byte;
+    value = Math.imul(value, 0x01000193) >>> 0;
+  });
+  return value.toString(16).padStart(8, "0");
+}
+
 async function loadNutritionPlan() {
   if (state.nutritionPlan || state.nutritionPlanLoading) {
     return state.nutritionPlan;
@@ -2947,13 +2825,77 @@ async function loadNutritionPlan() {
   try {
     const raw = await fetchText(nutritionDataPath());
     state.nutritionPlan = JSON.parse(raw);
+    state.nutritionPlanHash = nutritionContentHash(raw);
+    await loadNutritionCosts();
   } catch (error) {
     console.error("Could not load nutrition plan", error);
     state.nutritionPlan = null;
+    state.nutritionPlanHash = null;
   } finally {
     state.nutritionPlanLoading = false;
   }
   return state.nutritionPlan;
+}
+
+/** Drops what this tab believes and reads the file again. */
+async function reloadNutritionPlan() {
+  try {
+    const raw = await fetchText(nutritionDataPath());
+    state.nutritionPlan = JSON.parse(raw);
+    state.nutritionPlanHash = nutritionContentHash(raw);
+    await loadNutritionCosts();
+  } catch (error) {
+    console.error("Could not reload nutrition plan", error);
+    return;
+  }
+  if (normalizeAppMode(state.appMode) === "nutrition") {
+    renderNutritionPanel();
+  }
+}
+
+/**
+ * A tab left in the background holds a plan that may already be stale, and its
+ * next save would write that staleness back. Coming back to the tab re-reads
+ * the file, unless an edit of ours is still on its way there.
+ */
+function handleNutritionVisibilityReread() {
+  if (document.visibilityState !== "visible") {
+    return;
+  }
+  if (!state.nutritionPlan || state.nutritionPlanLoading || nutritionSavePending()) {
+    return;
+  }
+  reloadNutritionPlan();
+}
+
+/**
+ * What the week costs, priced by the server: the shopping list, what each meal
+ * costs and the four KPIs. The same numbers the React app shows, because they
+ * are the same numbers.
+ */
+async function loadNutritionCosts() {
+  try {
+    const response = await fetch(
+      `/api/nutrition/shopping?path=${encodeURIComponent(nutritionDataPath())}`,
+    );
+    if (!response.ok) {
+      throw new Error("Could not price the nutrition plan");
+    }
+    const payload = await response.json();
+    state.nutritionCosts = {
+      lines: Array.isArray(payload.lines) ? payload.lines : [],
+      total: toNumber(payload.total),
+      mealCosts: payload.meal_costs || {},
+      weeklyCost: toNumber(payload.weekly_cost),
+      dailyAverage: toNumber(payload.daily_average),
+      assignedMeals: toNumber(payload.assigned_meals),
+      totalSlots: toNumber(payload.total_slots),
+    };
+  } catch (error) {
+    console.error("Could not price the nutrition plan", error);
+    state.nutritionCosts = EMPTY_NUTRITION_COSTS;
+  }
+  return state.nutritionCosts;
 }
 
 function renderNutritionPanel() {
@@ -3000,21 +2942,42 @@ function renderNutritionPanel() {
   dom.nutritionContent.innerHTML = `<div class="nutrition-tab-body">${body}</div>`;
 }
 
+/**
+ * The labels of an ingredient: rice is a grain and a carbohydrate. Files
+ * written before labels were plural hold a plain string, and are read the same
+ * way — one label, or several separated by commas.
+ */
+function nutritionIngredientLabels(ingredient) {
+  const raw = ingredient?.category;
+  const items = Array.isArray(raw) ? raw : String(raw ?? "").split(",");
+  const labels = [];
+  items.forEach((item) => {
+    const label = String(item ?? "").trim();
+    if (label && !labels.includes(label)) {
+      labels.push(label);
+    }
+  });
+  return labels;
+}
+
+/** What the editor writes back: a list when there are several, a string when one. */
+function nutritionParseLabels(typed) {
+  const labels = nutritionIngredientLabels({ category: typed });
+  return labels.length <= 1 ? labels[0] || "" : labels;
+}
+
 function nutritionIngredientMap(plan) {
   const map = new Map();
   (plan.ingredients || []).forEach((ing) => map.set(ing.id, ing));
   return map;
 }
 
-function nutritionMealCost(meal, ingMap) {
-  if (!meal || !Array.isArray(meal.items)) {
+/** What a meal costs, as priced by /api/nutrition/shopping. */
+function nutritionMealCost(meal) {
+  if (!meal || !meal.id) {
     return 0;
   }
-  return meal.items.reduce((sum, item) => {
-    const ing = ingMap.get(item.ingredient);
-    const price = ing ? Number(ing.price_per_unit) || 0 : 0;
-    return sum + price * (Number(item.qty) || 0);
-  }, 0);
+  return toNumber(state.nutritionCosts?.mealCosts?.[meal.id]);
 }
 
 function findNutritionMeal(plan, type, id) {
@@ -3124,7 +3087,7 @@ function renderNutritionCatalog(plan, type) {
 }
 
 function renderNutritionMealCard(meal, ingMap) {
-  const cost = nutritionMealCost(meal, ingMap);
+  const cost = nutritionMealCost(meal);
   const items = Array.isArray(meal.items) ? meal.items : [];
   return `
     <div class="nutrition-meal">
@@ -3196,48 +3159,6 @@ function renderNutritionMealEditor(plan) {
   `;
 }
 
-function computeNutritionShoppingList(plan, ingMap) {
-  const totals = new Map();
-  const order = [];
-  (plan.week || []).forEach((day) => {
-    NUTRITION_MEAL_TYPES.forEach((type) => {
-      const meal = findNutritionMeal(plan, type, day[type]);
-      if (!meal || !Array.isArray(meal.items)) {
-        return;
-      }
-      meal.items.forEach((item) => {
-        const qty = Number(item.qty) || 0;
-        if (!totals.has(item.ingredient)) {
-          totals.set(item.ingredient, 0);
-          order.push(item.ingredient);
-        }
-        totals.set(item.ingredient, totals.get(item.ingredient) + qty);
-      });
-    });
-  });
-
-  const lines = order
-    .map((id) => {
-      const ing = ingMap.get(id);
-      const qty = totals.get(id);
-      const price = ing ? Number(ing.price_per_unit) || 0 : 0;
-      return {
-        id,
-        name: ing ? ing.name : id,
-        unit: ing ? ing.unit : "",
-        category: ing ? ing.category || "" : "",
-        store: ing ? ing.store || "" : "",
-        qty,
-        price,
-        total: qty * price,
-      };
-    })
-    .sort((a, b) => a.store.localeCompare(b.store) || b.total - a.total);
-
-  const total = lines.reduce((sum, line) => sum + line.total, 0);
-  return { lines, total };
-}
-
 function renderNutritionExcludeControl(plan, excludedSet) {
   const ingredients = (plan.ingredients || []).slice().sort((a, b) => a.name.localeCompare(b.name));
   const available = ingredients.filter((ing) => !excludedSet.has(ing.id));
@@ -3278,7 +3199,7 @@ function renderNutritionIngredients(plan) {
       (ing) => `
       <tr>
         <td><input type="text" class="entry-input" data-ing-field="name" data-ing-id="${escapeHtml(ing.id)}" value="${escapeHtml(ing.name || "")}" /></td>
-        <td><input type="text" class="entry-input" data-ing-field="category" data-ing-id="${escapeHtml(ing.id)}" value="${escapeHtml(ing.category || "")}" /></td>
+        <td><input type="text" class="entry-input" data-ing-field="category" data-ing-id="${escapeHtml(ing.id)}" value="${escapeHtml(nutritionIngredientLabels(ing).join(", "))}" /></td>
         <td><input type="text" class="entry-input nutrition-unit-input" data-ing-field="unit" data-ing-id="${escapeHtml(ing.id)}" value="${escapeHtml(ing.unit || "")}" /></td>
         <td><input type="number" min="0" step="1" class="entry-input" data-ing-field="price_per_unit" data-ing-id="${escapeHtml(ing.id)}" value="${escapeHtml(String(ing.price_per_unit ?? 0))}" /></td>
         <td><input type="text" class="entry-input" data-ing-field="store" data-ing-id="${escapeHtml(ing.id)}" value="${escapeHtml(ing.store || "")}" /></td>
@@ -3359,39 +3280,18 @@ function randomizeNutritionDay(plan, dayIndex) {
 }
 
 function renderNutritionWeeklyPlan(plan) {
-  const ingMap = nutritionIngredientMap(plan);
   const excludedSet = nutritionExcludedSet(plan);
   const week = Array.isArray(plan.week) ? plan.week : [];
 
-  const costCache = new Map();
-  const costOf = (type, id) => {
-    if (!id) {
-      return 0;
-    }
-    const key = `${type}:${id}`;
-    if (!costCache.has(key)) {
-      costCache.set(key, nutritionMealCost(findNutritionMeal(plan, type, id), ingMap));
-    }
-    return costCache.get(key);
-  };
-
-  let weeklyCost = 0;
-  let assignedMeals = 0;
-  week.forEach((day) => {
-    NUTRITION_MEAL_TYPES.forEach((type) => {
-      if (day[type]) {
-        assignedMeals += 1;
-        weeklyCost += costOf(type, day[type]);
-      }
-    });
-  });
-  const dailyAvg = week.length ? weeklyCost / week.length : 0;
-  const shopping = computeNutritionShoppingList(plan, ingMap);
+  // Prices, the shopping list and the four KPIs all come from the server.
+  const costs = state.nutritionCosts || EMPTY_NUTRITION_COSTS;
+  const shopping = { lines: costs.lines, total: costs.total };
+  const costOf = (id) => (id ? toNumber(costs.mealCosts[id]) : 0);
 
   const kpis = [
-    { label: t("nutrition_kpi_weekly_cost"), value: formatCop(weeklyCost), meta: "" },
-    { label: t("nutrition_kpi_daily_avg"), value: formatCop(dailyAvg), meta: "" },
-    { label: t("nutrition_kpi_meals"), value: `${assignedMeals} / ${week.length * NUTRITION_MEAL_TYPES.length}`, meta: "" },
+    { label: t("nutrition_kpi_weekly_cost"), value: formatCop(costs.weeklyCost), meta: "" },
+    { label: t("nutrition_kpi_daily_avg"), value: formatCop(costs.dailyAverage), meta: "" },
+    { label: t("nutrition_kpi_meals"), value: `${costs.assignedMeals} / ${costs.totalSlots}`, meta: "" },
     { label: t("nutrition_kpi_ingredients"), value: String(shopping.lines.length), meta: "" },
   ];
 
@@ -3419,7 +3319,7 @@ function renderNutritionWeeklyPlan(plan) {
       let dayTotal = 0;
       const cells = ["breakfast", "lunch", "snack", "dinner"].map((type) => {
         const id = day[type] || "";
-        dayTotal += costOf(type, id);
+        dayTotal += costOf(id);
         const meal = findNutritionMeal(plan, type, id);
         const label = meal ? meal.name : t("nutrition_none_option");
         return `
@@ -3721,6 +3621,8 @@ function handleNutritionInput(event) {
       const field = target.dataset.ingField;
       if (field === "price_per_unit") {
         ing.price_per_unit = Math.max(0, Number(target.value) || 0);
+      } else if (field === "category") {
+        ing.category = nutritionParseLabels(target.value);
       } else {
         ing[field] = target.value;
       }
@@ -3805,32 +3707,109 @@ function nutritionMealId(plan, type, name) {
 
 function scheduleNutritionSave() {
   clearTimeout(nutritionSaveTimer);
-  nutritionSaveTimer = setTimeout(saveNutritionPlan, 400);
+  nutritionSaveTimer = setTimeout(() => {
+    nutritionSaveTimer = 0;
+    saveNutritionPlan();
+  }, 400);
+}
+
+/** Is there an edit of ours on its way to the file? */
+function nutritionSavePending() {
+  return nutritionSaveTimer !== 0 || nutritionSaveInFlight || nutritionSaveQueued;
 }
 
 async function saveNutritionPlan() {
   if (!state.nutritionPlan) {
     return;
   }
+  // One save at a time: a second one landing before the first answers would
+  // carry a base hash the first save just made stale.
+  if (nutritionSaveInFlight) {
+    nutritionSaveQueued = true;
+    return;
+  }
+  nutritionSaveInFlight = true;
   try {
-    await fetch("/api/nutrition/save", {
+    const response = await fetch("/api/nutrition/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: nutritionDataPath(), document: state.nutritionPlan }),
+      body: JSON.stringify({
+        path: nutritionDataPath(),
+        document: state.nutritionPlan,
+        ...(state.nutritionPlanHash ? { base_hash: state.nutritionPlanHash } : {}),
+      }),
     });
+
+    if (response.status === 409) {
+      // The file moved under this tab — another tab, the other app. The newer
+      // version wins; this tab reloads it and says so instead of overwriting.
+      nutritionSaveQueued = false;
+      await reloadNutritionPlan();
+      window.alert(t("nutrition_conflict"));
+      return;
+    }
+    if (!response.ok) {
+      throw new Error(`Could not save nutrition plan (${response.status})`);
+    }
+
+    const payload = await response.json();
+    if (payload && typeof payload.hash === "string") {
+      state.nutritionPlanHash = payload.hash;
+    }
+    // The prices change with the plan, and they are the server's to work out.
+    await loadNutritionCosts();
+    if (normalizeAppMode(state.appMode) === "nutrition") {
+      renderNutritionPanel();
+    }
   } catch (error) {
     console.error("Could not save nutrition plan", error);
+  } finally {
+    nutritionSaveInFlight = false;
+    if (nutritionSaveQueued) {
+      nutritionSaveQueued = false;
+      saveNutritionPlan();
+    }
   }
 }
 
-function renderCreditSimulator() {
+/**
+ * The simulator asks server.py to price the credit, the same engine that prices
+ * the real debts, so the two can never quote a different installment.
+ */
+async function fetchCreditSimulation(debt) {
+  const query = new URLSearchParams({
+    capital: String(toNumber(debt.capital)),
+    initial_investment: String(toNumber(debt.initialInvestment)),
+    annual_interest_rate: String(debt.annualInterestRateRaw ?? debt.annualInterestRate ?? 0),
+    term_months: String(clampDebtTermMonths(debt.termMonths)),
+    insurance: String(toNumber(debt.insurance)),
+    other_charges: String(toNumber(debt.otherCharges)),
+  });
+
+  const response = await fetch(`/api/debts/simulate?${query}`, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error("Could not simulate the credit");
+  }
+  const payload = await response.json();
+  return adaptServerSchedule(payload.simulation);
+}
+
+async function renderCreditSimulator() {
   if (!dom.creditSimulatorSummary || !dom.creditSimulatorTable) {
     return;
   }
 
   syncCreditSimulatorStateFromForm();
   const debt = getCreditSimulatorDebt();
-  const detail = buildDebtDetail(debt);
+
+  let detail;
+  try {
+    detail = await fetchCreditSimulation(debt);
+  } catch (error) {
+    console.error(error);
+    return;
+  }
+
   const scheduleRows = getCreditSimulatorScheduleRows(detail.schedule);
   const formatCreditAmount = (amountCop) => formatCreditSimulatorCurrency(amountCop);
 
@@ -4001,6 +3980,44 @@ function formatCreditSimulatorCurrency(amountCop) {
   }
 
   return formatCopNoCodeDetailed(amountCop);
+}
+
+/** The server schedule under the names this dialog reads. */
+function adaptServerSchedule(detail) {
+  return {
+    capital: detail.capital,
+    initialInvestment: detail.initial_investment,
+    financedCapital: detail.financed_capital,
+    termMonths: detail.term_months,
+    effectiveTermMonths: detail.effective_term_months,
+    monthlyInterestRate: detail.monthly_interest_rate,
+    insurance: detail.insurance,
+    otherCharges: detail.other_charges,
+    installment: detail.installment,
+    actualPayment: detail.monthly_payment,
+    totalInsurance: detail.total_insurance,
+    totalOtherCharges: detail.total_other_charges,
+    totalInterest: detail.total_interest,
+    total: detail.total,
+    derivedPaidInstallments: detail.paid_installments,
+    abonoStrategy: detail.abono_strategy,
+    schedule: (detail.schedule || []).map((row) => ({
+      period: row.period,
+      installment: row.installment,
+      insurance: row.insurance,
+      otherCharges: row.other_charges,
+      interest: row.interest,
+      principal: row.principal,
+      extraPayment: row.extra_payment,
+      actualPayment: row.actual_payment,
+      totalPayment: row.total_payment,
+      paid: row.paid,
+      balance: row.balance,
+      preScheduleMonthIndex: row.pre_schedule_month_index ?? null,
+      preScheduleYear: row.pre_schedule_year || "",
+      preScheduleCount: row.pre_schedule_count || 0,
+    })),
+  };
 }
 
 function renderDebtDetailSummaryGroup(title, items) {
@@ -4598,6 +4615,7 @@ function switchDataset(dataset) {
   state.selectedYear = normalizeSelectedYear(readStorage(selectedYearStorageKey(state.dataset)));
   state.dashboard = null;
   state.debtItems = [];
+  state.debtDetails = [];
   state.nutritionPlan = null;
   state.nutritionPlanLoading = false;
   state.signature = "";
@@ -4700,7 +4718,6 @@ function renderCreateIncomeDialogState() {
   }
 
   dom.createIncomeDialogTitle.textContent = t("create_income_title");
-  syncCreateIncomeAmounts(createIncomeAmountMode);
 }
 
 function renderCategorySortButtons() {
@@ -4811,413 +4828,16 @@ function buildDebtKpis(totals) {
   ];
 }
 
-function buildDebtLinkedPayments(debt) {
-  const link = debt.cashFlowLink;
-  if (!link || !state.dashboard?.months?.length) {
+function buildDebtItems() {
+  const details = Array.isArray(state.debtDetails) ? state.debtDetails : [];
+  if (!details.length) {
     return [];
   }
 
-  const linkedDebts = getDebtsSharingCashFlowLink(link);
-  const linkedPayments = new Map();
-  const preScheduleAbonos = [];
-  state.dashboard.months.forEach((month) => {
-    const period = getDebtCashFlowPeriod(link, month, state.selectedYear);
-
-    const linkedEntries = month.allEntries.filter((entry) => isDebtLinkedCashFlowEntry(entry, link, debt.id));
-    if (!linkedEntries.length) {
-      return;
-    }
-
-    const regularEntries = linkedEntries.filter((entry) => !isDebtCashFlowAbono(entry));
-    const abonoEntries = linkedEntries.filter((entry) => isDebtCashFlowAbono(entry));
-
-    if (period <= 0) {
-      if (!abonoEntries.length) {
-        return;
-      }
-      const abonoAmountCop = sum(abonoEntries.map((entry) => entry.amountCop));
-      const allocatedAbono = allocateSharedDebtPayment({
-        debt,
-        linkedDebts,
-        period: 1,
-        amountCop: abonoAmountCop,
-      });
-      if (allocatedAbono <= 0) {
-        return;
-      }
-      preScheduleAbonos.push({
-        period: 0,
-        preSchedule: true,
-        amountCop: 0,
-        abonoAmountCop: allocatedAbono,
-        paid: abonoEntries.some((entry) => entry.paid),
-        monthIndex: month.index,
-        year: state.selectedYear,
-      });
-      return;
-    }
-
-    const regularAmountCop = sum(regularEntries.map((entry) => entry.amountCop));
-    const abonoAmountCop = sum(abonoEntries.map((entry) => entry.amountCop));
-
-    const allocatedRegular = allocateSharedDebtPayment({
-      debt,
-      linkedDebts,
-      period,
-      amountCop: regularAmountCop,
-    });
-    const allocatedAbono = allocateSharedDebtPayment({
-      debt,
-      linkedDebts,
-      period,
-      amountCop: abonoAmountCop,
-    });
-
-    if (allocatedRegular <= 0 && allocatedAbono <= 0) {
-      return;
-    }
-
-    linkedPayments.set(period, {
-      period,
-      amountCop: allocatedRegular,
-      abonoAmountCop: allocatedAbono,
-      paid: regularEntries.some((entry) => entry.paid) || abonoEntries.some((entry) => entry.paid),
-      monthIndex: month.index,
-      year: state.selectedYear,
-    });
+  return details.map((detail) => {
+    const baseDebt = state.debtItems.find((item) => item.id === detail.id) || {};
+    return adaptDebtDetail(detail, baseDebt);
   });
-
-  return [...preScheduleAbonos, ...linkedPayments.values()];
-}
-
-function getDebtsSharingCashFlowLink(link) {
-  return state.debtItems.filter((candidate) => (
-    isSameDebtCashFlowLink(candidate.cashFlowLink, link)
-  ));
-}
-
-function allocateSharedDebtPayment({ debt, linkedDebts, period, amountCop }) {
-  if (!linkedDebts.length || linkedDebts.length === 1) {
-    return normalizeDebtAmountValue(amountCop);
-  }
-
-  const paymentWeights = linkedDebts.map((candidate) => ({
-    debt: candidate,
-    expectedPayment: getDebtExpectedPaymentForPeriod(candidate, period),
-  }));
-  const currentWeight = paymentWeights.find((weight) => weight.debt.id === debt.id);
-
-  if (!currentWeight || currentWeight.expectedPayment <= 0) {
-    return 0;
-  }
-
-  const totalExpectedPayment = sum(paymentWeights.map((weight) => weight.expectedPayment));
-  if (totalExpectedPayment <= 0) {
-    return normalizeDebtAmountValue(amountCop / linkedDebts.length);
-  }
-
-  return normalizeDebtAmountValue(amountCop * (currentWeight.expectedPayment / totalExpectedPayment));
-}
-
-function getDebtExpectedPaymentForPeriod(debt, period) {
-  const snapshot = buildDebtPaymentSnapshot(debt);
-  if (period <= 0 || period > snapshot.termMonths) {
-    return 0;
-  }
-
-  return snapshot.actualPayment;
-}
-
-function buildDebtPaymentSnapshot(baseDebt) {
-  const capital = resolveDebtCapital(baseDebt);
-  const initialInvestment = resolveDebtInitialInvestment(baseDebt, {}, capital);
-  const financedCapital = Math.max(capital - initialInvestment, 0);
-  const insurance = resolveDebtInsurance(baseDebt);
-  const otherCharges = resolveDebtOtherCharges(baseDebt);
-  const termMonths = resolveDebtTermMonths(baseDebt);
-  const annualInterestRateSource = baseDebt.annualInterestRateRaw
-    ?? baseDebt.annualInterestRate;
-  const annualInterestRate = clampNumber(
-    parseDebtRateInput(annualInterestRateSource),
-    0,
-    200,
-  );
-  const monthlyInterestRate = calculateMonthlyInterestRate(annualInterestRate) / 100;
-  const installment = calculateDebtInstallment(financedCapital, monthlyInterestRate, termMonths);
-  const paymentBase = resolveDebtPaymentBase(
-    {
-      ...baseDebt,
-      annualInterestRate,
-    },
-    installment,
-  );
-
-  return {
-    termMonths,
-    actualPayment: normalizeDebtAmountValue(paymentBase + insurance + otherCharges),
-  };
-}
-
-function buildDebtItems() {
-  return state.debtItems.map((baseDebt) => {
-    const capital = resolveDebtCapital(baseDebt);
-    const initialInvestment = resolveDebtInitialInvestment(baseDebt, {}, capital);
-    const insurance = resolveDebtInsurance(baseDebt);
-    const otherCharges = resolveDebtOtherCharges(baseDebt);
-    const termMonths = resolveDebtTermMonths(baseDebt);
-    const linkedPayments = buildDebtLinkedPayments(baseDebt);
-    const annualInterestRateSource = baseDebt.annualInterestRateRaw
-      ?? baseDebt.annualInterestRate;
-    const annualInterestRate = clampNumber(
-      parseDebtRateInput(annualInterestRateSource),
-      0,
-      200,
-    );
-    const annualInterestRateRaw = String(
-      baseDebt.annualInterestRateRaw ?? formatNumberForInput(baseDebt.annualInterestRate),
-    );
-    const detail = buildDebtDetail({
-      ...baseDebt,
-      capital,
-      initialInvestment,
-      insurance,
-      otherCharges,
-      linkedPayments,
-      termMonths,
-      annualInterestRate,
-      annualInterestRateRaw,
-    });
-    const storedPaidInstallments = clampNumber(
-      Math.round(toNumber(baseDebt.paidInstallments)),
-      0,
-      termMonths,
-    );
-    const paidInstallments = baseDebt.cashFlowLink
-      ? clampNumber(detail.derivedPaidInstallments, 0, termMonths)
-      : storedPaidInstallments;
-    const activeInstallments = Array.isArray(detail.schedule)
-      ? detail.schedule.filter((row) => row.period > 0 && row.totalPayment > 0).length
-      : termMonths;
-    const effectiveTermMonths = activeInstallments > 0 ? activeInstallments : termMonths;
-    const remainingInstallments = clampNumber(
-      activeInstallments - paidInstallments,
-      0,
-      termMonths,
-    );
-    const paidScheduleRow = detail.schedule[paidInstallments] || detail.schedule[detail.schedule.length - 1];
-    const remainingBalance = normalizeCop(paidScheduleRow?.balance ?? detail.financedCapital);
-
-    return {
-      ...baseDebt,
-      capital,
-      initialInvestment,
-      financedCapital: detail.financedCapital,
-      insurance,
-      otherCharges,
-      linkedPayments,
-      actualPayment: detail.actualPayment,
-      termMonths,
-      effectiveTermMonths,
-      paidInstallments,
-      remainingInstallments,
-      annualInterestRate,
-      annualInterestRateRaw,
-      monthlyFee: detail.actualPayment,
-      paidBalance: normalizeCop(detail.financedCapital - remainingBalance),
-      remainingBalance,
-    };
-  });
-}
-
-function buildDebtDetail(debt) {
-  const capital = Math.max(toNumber(debt.capital ?? debt.originalBalance), 0);
-  const initialInvestment = clampNumber(debt.initialInvestment, 0, capital);
-  const financedCapital = Math.max(capital - initialInvestment, 0);
-  const termMonths = clampDebtTermMonths(debt.termMonths ?? getDebtTotalInstallments(debt));
-  const monthlyInterestRate = calculateMonthlyInterestRate(debt.annualInterestRate) / 100;
-  const insurance = normalizeDebtAmountValue(debt.insurance ?? 0);
-  const otherCharges = normalizeDebtAmountValue(debt.otherCharges ?? 0);
-  const abonoStrategy = debt.abonoStrategy === "reduce_payment" ? "reduce_payment" : "reduce_term";
-  const allLinkedPayments = Array.isArray(debt.linkedPayments) ? debt.linkedPayments : [];
-  const preSchedulePayments = allLinkedPayments.filter((payment) => payment?.preSchedule === true);
-  const preScheduleAbonoTotal = normalizeDebtAmountValue(
-    sum(preSchedulePayments.map((payment) => toNumber(payment.abonoAmountCop))),
-  );
-  const preSchedulePaid = preSchedulePayments.some((payment) => payment.paid);
-  const linkedPaymentByPeriod = new Map(
-    allLinkedPayments
-      .filter((payment) => payment?.preSchedule !== true)
-      .map((payment) => [toNumber(payment.period), payment]),
-  );
-  const link = debt.cashFlowLink;
-  const linkStartYearNumber = link ? Number(link.startYear || link.start_year) : NaN;
-  const linkStartMonthIndex = link ? getMonthIndexFromFolder(link.startMonth || link.start_month) : -1;
-  const todayDate = new Date();
-  const todayAbsoluteMonth = todayDate.getFullYear() * 12 + todayDate.getMonth();
-  const schedule = [];
-  const initialBalance = Math.max(financedCapital - preScheduleAbonoTotal, 0);
-  const appliedPreScheduleAbono = Math.max(financedCapital - initialBalance, 0);
-  const installmentBase = abonoStrategy === "reduce_payment" && appliedPreScheduleAbono > 0
-    ? initialBalance
-    : financedCapital;
-  const installment = calculateDebtInstallment(installmentBase, monthlyInterestRate, termMonths);
-  const paymentBase = resolveDebtPaymentBase(debt, installment);
-  const actualPayment = normalizeDebtAmountValue(paymentBase + insurance + otherCharges);
-  let balance = initialBalance;
-  let currentInstallment = installment;
-  let totalInterest = 0;
-  let totalInsurance = 0;
-  let totalOtherCharges = 0;
-
-  const preScheduleSorted = [...preSchedulePayments].sort((a, b) => {
-    const yearDiff = toNumber(a.year) - toNumber(b.year);
-    if (yearDiff !== 0) {
-      return yearDiff;
-    }
-    return toNumber(a.monthIndex) - toNumber(b.monthIndex);
-  });
-  const firstPreSchedule = preScheduleSorted[0] || null;
-  schedule.push({
-    period: 0,
-    installment: 0,
-    insurance: 0,
-    otherCharges: 0,
-    interest: 0,
-    principal: 0,
-    extraPayment: appliedPreScheduleAbono,
-    actualPayment: 0,
-    totalPayment: 0,
-    paid: preSchedulePaid && appliedPreScheduleAbono > 0,
-    balance,
-    preScheduleMonthIndex: firstPreSchedule ? toNumber(firstPreSchedule.monthIndex) : null,
-    preScheduleYear: firstPreSchedule ? String(firstPreSchedule.year || "").trim() : "",
-    preScheduleCount: preScheduleSorted.length,
-  });
-
-  for (let period = 1; period <= termMonths; period += 1) {
-    const interest = balance * monthlyInterestRate;
-    const regularPrincipal = Math.max(currentInstallment - interest, 0);
-    const principal = period === termMonths ? balance : Math.min(regularPrincipal, balance);
-    const periodInstallment = principal + interest;
-    const linkedPayment = linkedPaymentByPeriod.get(period);
-    const periodTotalCharge = normalizeDebtAmountValue(periodInstallment + insurance + otherCharges);
-    const baseRecurringPayment = abonoStrategy === "reduce_payment"
-      ? (periodInstallment > 0 ? periodTotalCharge : 0)
-      : (periodInstallment > 0 ? Math.min(actualPayment, periodTotalCharge) : 0);
-    const extraPayment = normalizeDebtAmountValue(linkedPayment?.abonoAmountCop || 0);
-    const principalWithExtraPayment = Math.min(principal + extraPayment, balance);
-    const appliedExtraPayment = Math.max(principalWithExtraPayment - principal, 0);
-    const totalPayment = baseRecurringPayment + appliedExtraPayment;
-    balance = Math.max(balance - principalWithExtraPayment, 0);
-    totalInterest += interest;
-    totalInsurance += insurance;
-    totalOtherCharges += otherCharges;
-
-    if (abonoStrategy === "reduce_payment" && appliedExtraPayment > 0) {
-      const remainingPeriods = termMonths - period;
-      if (remainingPeriods > 0 && balance > 0) {
-        currentInstallment = calculateDebtInstallment(balance, monthlyInterestRate, remainingPeriods);
-      }
-    }
-
-    let periodPaid = Boolean(linkedPayment?.paid);
-    if (!periodPaid && link && Number.isInteger(linkStartYearNumber) && linkStartMonthIndex >= 0) {
-      const absoluteMonth = linkStartMonthIndex + (period - 1);
-      const periodYearNumber = linkStartYearNumber + Math.floor(absoluteMonth / 12);
-      const periodMonthIndex = absoluteMonth % 12;
-      const periodAbsoluteMonth = periodYearNumber * 12 + periodMonthIndex;
-      if (periodAbsoluteMonth < todayAbsoluteMonth) {
-        periodPaid = true;
-      } else if (periodAbsoluteMonth === todayAbsoluteMonth && !linkedPayment) {
-        periodPaid = true;
-      }
-    }
-
-    schedule.push({
-      period,
-      installment: periodInstallment,
-      insurance,
-      otherCharges,
-      interest,
-      principal,
-      extraPayment: appliedExtraPayment,
-      actualPayment: baseRecurringPayment,
-      totalPayment,
-      paid: periodPaid,
-      balance,
-    });
-  }
-
-  const derivedPaidInstallments = schedule.reduce(
-    (count, row) => (row.period > 0 && row.paid ? count + 1 : count),
-    0,
-  );
-  const activeInstallments = schedule.filter(
-    (row) => row.period > 0 && row.totalPayment > 0,
-  ).length;
-  const effectiveTermMonths = activeInstallments > 0 ? activeInstallments : termMonths;
-
-  return {
-    capital,
-    initialInvestment,
-    financedCapital,
-    termMonths,
-    effectiveTermMonths,
-    monthlyInterestRate,
-    insurance,
-    otherCharges,
-    installment,
-    actualPayment,
-    totalInsurance,
-    totalOtherCharges,
-    totalInterest,
-    total: financedCapital + totalInterest + totalInsurance + totalOtherCharges,
-    schedule,
-    derivedPaidInstallments,
-    abonoStrategy,
-  };
-}
-
-function resolveDebtPaymentBase(debt, fallbackInstallment) {
-  const statementPrincipal = normalizeDebtAmountValue(debt.statementPrincipal ?? 0);
-  const statementBalance = normalizeDebtAmountValue(debt.statementBalance ?? 0);
-  const statementInterestDays = toNumber(debt.statementInterestDays);
-
-  if (statementPrincipal > 0 && statementBalance > 0 && statementInterestDays > 0) {
-    const statementInterest = calculateDebtDailyInterest(
-      statementBalance,
-      debt.annualInterestRate,
-      statementInterestDays,
-    );
-    return normalizeDebtAmountValue(statementPrincipal + statementInterest);
-  }
-
-  if (debt.statementPayment !== undefined) {
-    return normalizeDebtAmountValue(debt.statementPayment);
-  }
-
-  return normalizeDebtAmountValue(fallbackInstallment);
-}
-
-function calculateDebtDailyInterest(balance, annualInterestRate, days) {
-  const annualRate = clampNumber(annualInterestRate, 0, 200) / 100;
-  if (!balance || annualRate <= 0 || days <= 0) {
-    return 0;
-  }
-
-  return balance * (Math.pow(1 + annualRate, days / 365) - 1);
-}
-
-function calculateDebtInstallment(capital, monthlyInterestRate, termMonths) {
-  if (!capital || !termMonths) {
-    return 0;
-  }
-
-  if (monthlyInterestRate <= 0) {
-    return capital / termMonths;
-  }
-
-  return (capital * monthlyInterestRate) / (1 - Math.pow(1 + monthlyInterestRate, -termMonths));
 }
 
 function buildDebtTotals(debts) {
@@ -5364,34 +4984,19 @@ function renderBarList(container, categoryTotals) {
   `;
 }
 
-function renderAnnualTable(table, months) {
+function renderAnnualTable(table, months, totals = {}) {
   const useUsd = state.annualTableCurrency === "usd";
-  const formatAnnualAmount = (month, amountCop) => {
-    if (!useUsd) {
-      return formatCopPlain(amountCop);
-    }
 
-    if (month.usdCop > 0) {
-      return formatUsd(normalizeUsd(amountCop / month.usdCop));
-    }
-
-    return formatUsd(0);
+  // Every amount here was converted by the server at each month's own rate,
+  // and so was the total column. This function only picks and formats.
+  const cell = (month, key, amountCop) =>
+    useUsd ? formatUsd(toNumber(month.usd?.[key])) : formatCopPlain(amountCop);
+  const totalCell = (key) => {
+    const total = totals[key] || {};
+    return useUsd ? formatUsd(toNumber(total.usd)) : formatCopPlain(toNumber(total.cop));
   };
   const getAnnualTypeAmount = (month, typeKey) =>
     typeKey === "wants" ? month.displayTypes.wants : month.types[typeKey].total;
-
-  const sumCopAcross = (selector) =>
-    months.reduce((acc, month) => acc + normalizeCop(selector(month)), 0);
-  const sumUsdAcross = (selector) =>
-    months.reduce((acc, month) => {
-      const cop = normalizeCop(selector(month));
-      return acc + (month.usdCop > 0 ? cop / month.usdCop : 0);
-    }, 0);
-  const totalCopOrUsd = (selector) =>
-    useUsd ? formatUsd(normalizeUsd(sumUsdAcross(selector))) : formatCopPlain(sumCopAcross(selector));
-  const totalIncome = useUsd
-    ? formatUsd(months.reduce((acc, month) => acc + (month.incomeUsd || 0), 0))
-    : formatCopPlain(months.reduce((acc, month) => acc + normalizeCop(month.incomeCop), 0));
 
   const rows = [
     {
@@ -5400,34 +5005,34 @@ function renderAnnualTable(table, months) {
       metricClass: "annual-concept-chip--income",
       formatter: (month) => (useUsd ? formatUsd(month.incomeUsd) : formatCopPlain(month.incomeCop)),
       totalClassName: "annual-value annual-value--income",
-      totalFormatter: () => totalIncome,
+      totalFormatter: () => totalCell("income"),
     },
     {
       label: t("annual_table_outcomes"),
       className: "annual-value",
       metricClass: "annual-concept-chip--outcomes",
-      formatter: (month) => formatAnnualAmount(month, month.totalOutcomes),
+      formatter: (month) => cell(month, "outcomes", month.totalOutcomes),
       totalClassName: "annual-value",
-      totalFormatter: () => totalCopOrUsd((month) => month.totalOutcomes),
+      totalFormatter: () => totalCell("outcomes"),
     },
     {
       label: t("annual_table_free"),
       className: (month) => `annual-value ${month.free < 0 ? "annual-value--negative" : "annual-value--positive"}`,
       metricClass: "annual-concept-chip--free",
-      formatter: (month) => formatAnnualAmount(month, month.free),
+      formatter: (month) => cell(month, "free", month.free),
       totalClassName: () => {
-        const totalFreeCop = sumCopAcross((month) => month.free);
+        const totalFreeCop = toNumber((totals.free || {}).cop);
         return `annual-value ${totalFreeCop < 0 ? "annual-value--negative" : "annual-value--positive"}`;
       },
-      totalFormatter: () => totalCopOrUsd((month) => month.free),
+      totalFormatter: () => totalCell("free"),
     },
     ...TYPE_DISPLAY_ORDER.map((typeKey) => ({
       label: t(`annual_table_${typeKey}`),
       className: `annual-type-pill annual-type-pill--${typeKey}`,
       metricClass: `annual-concept-chip--${typeKey}`,
-      formatter: (month) => formatAnnualAmount(month, getAnnualTypeAmount(month, typeKey)),
+      formatter: (month) => cell(month, typeKey, getAnnualTypeAmount(month, typeKey)),
       totalClassName: `annual-type-pill annual-type-pill--${typeKey}`,
-      totalFormatter: () => totalCopOrUsd((month) => getAnnualTypeAmount(month, typeKey)),
+      totalFormatter: () => totalCell(typeKey),
     })),
   ];
 
@@ -5510,37 +5115,30 @@ function applyAnnualTableSizing(table) {
   table.style.setProperty("--annual-month-col-width", `${monthColumnWidth}px`);
 }
 
-function renderMonthlySummaryTable(table, month) {
-  const rows = [
-    {
-      label: t("monthly_summary_incomes"),
-      value: month.incomeCop,
-      usdValue: month.incomeUsd,
-      ratio: 100,
-    },
-    ...TYPE_DISPLAY_ORDER.map((typeKey) => ({
-      label: getTypeLabel(typeKey),
-      value: month.displayTypes[typeKey],
-      usdValue: month.usdCop > 0 ? normalizeUsd(month.displayTypes[typeKey] / month.usdCop) : 0,
-      ratio: month.incomeCop > 0 ? (month.displayTypes[typeKey] / month.incomeCop) * 100 : 0,
-    })),
-    {
-      label: t("monthly_summary_after_paid"),
-      value: normalizeCop(month.incomeCop - month.paidOutcomes),
-      usdValue: month.usdCop > 0 ? normalizeUsd((month.incomeCop - month.paidOutcomes) / month.usdCop) : 0,
-      ratio: month.incomeCop > 0 ? ((month.incomeCop - month.paidOutcomes) / month.incomeCop) * 100 : 0,
-    },
-  ];
-
-  if (month.free < 0) {
-    rows.push({
-      label: getTypeLabel("deficit"),
-      value: Math.abs(month.free),
-      usdValue: month.usdCop > 0 ? normalizeUsd(Math.abs(month.free) / month.usdCop) : 0,
-      ratio: month.incomeCop > 0 ? (Math.abs(month.free) / month.incomeCop) * 100 : 0,
-      rowClass: "is-summary",
-    });
+/** The label the server's row key stands for. */
+function getMonthlySummaryRowLabel(key) {
+  if (key === "incomes") {
+    return t("monthly_summary_incomes");
   }
+  if (key === "after_paid") {
+    return t("monthly_summary_after_paid");
+  }
+  if (key === "deficit") {
+    return getTypeLabel("deficit");
+  }
+  return getTypeLabel(key);
+}
+
+function renderMonthlySummaryTable(table, month) {
+  // The rows come priced and shared out by the server, in the same order the
+  // React app draws them.
+  const rows = (month.summaryRows || []).map((row) => ({
+    label: getMonthlySummaryRowLabel(row.label),
+    value: toNumber(row.cop),
+    usdValue: toNumber(row.usd),
+    ratio: toNumber(row.ratio),
+    ...(row.label === "deficit" ? { rowClass: "is-summary" } : {}),
+  }));
 
   table.innerHTML = `
     <thead>
@@ -6319,36 +5917,6 @@ function closeCreateEntryDialog() {
   }
 }
 
-function syncCreateIncomeAmounts(sourceField) {
-  if (!dom.createIncomeUsd || !dom.createIncomeFx || !dom.createIncomeCop) {
-    return;
-  }
-
-  const amountUsdRaw = String(dom.createIncomeUsd.value || "").trim();
-  const amountCopRaw = String(dom.createIncomeCop.value || "").trim();
-  const usdCop = toNumber(dom.createIncomeFx.value);
-  if (sourceField === "cop") {
-    if (!amountCopRaw) {
-      dom.createIncomeUsd.value = "";
-      return;
-    }
-    const amountCop = toNumber(dom.createIncomeCop.value);
-    dom.createIncomeUsd.value = usdCop > 0 && amountCop
-      ? String(roundIncomeDisplayValue(amountCop / usdCop))
-      : "";
-    return;
-  }
-
-  if (!amountUsdRaw) {
-    dom.createIncomeCop.value = "";
-    return;
-  }
-  const amountUsd = toNumber(dom.createIncomeUsd.value);
-  dom.createIncomeCop.value = amountUsd || usdCop
-    ? String(roundIncomeDisplayValue(amountUsd * usdCop))
-    : "";
-}
-
 async function fetchLatestUsdCopRate({ force = false } = {}) {
   if (!force && Number.isFinite(state.liveUsdCopRate) && state.liveUsdCopRate > 0) {
     return state.liveUsdCopRate;
@@ -6449,7 +6017,6 @@ function openCreateIncomeDialog() {
   dom.createIncomeFx.setCustomValidity("");
   dom.createIncomeReceived.checked = true;
   renderCreateIncomeDialogState();
-  syncCreateIncomeAmounts("usd");
 
   if (dom.createIncomeDialogEyebrow) {
     dom.createIncomeDialogEyebrow.textContent = t("create_income_eyebrow");
@@ -6477,8 +6044,7 @@ function openCreateIncomeDialog() {
       !createIncomeFxUserEdited
     ) {
       dom.createIncomeFx.value = String(rate);
-      syncCreateIncomeAmounts(createIncomeAmountMode);
-    }
+      }
   });
 }
 
@@ -6570,57 +6136,6 @@ function buildEntryUpdates(entryField, field) {
   return null;
 }
 
-function getIncomeRowInput(row, incomeField) {
-  if (!(row instanceof HTMLTableRowElement)) {
-    return null;
-  }
-
-  const input = row.querySelector(`input[data-income-field="${incomeField}"]`);
-  return input instanceof HTMLInputElement ? input : null;
-}
-
-function syncMonthlyIncomeRowAmounts(row, sourceField) {
-  const amountUsdInput = getIncomeRowInput(row, "amount_usd");
-  const usdCopInput = getIncomeRowInput(row, "usd_cop");
-  const amountCopInput = getIncomeRowInput(row, "amount_cop");
-  if (!amountUsdInput || !usdCopInput || !amountCopInput) {
-    return;
-  }
-
-  const amountUsdRaw = String(amountUsdInput.value || "").trim();
-  const amountCopRaw = String(amountCopInput.value || "").trim();
-  const usdCop = Number(usdCopInput.value);
-
-  if (sourceField === "amount_cop") {
-    if (!amountCopRaw) {
-      amountUsdInput.value = "";
-      return;
-    }
-
-    const amountCop = Number(amountCopRaw);
-    if (!Number.isFinite(amountCop) || !Number.isFinite(usdCop) || usdCop <= 0) {
-      return;
-    }
-
-    amountUsdInput.value = String(roundIncomeDisplayValue(amountCop / usdCop));
-    return;
-  }
-
-  if (sourceField === "amount_usd" || sourceField === "usd_cop") {
-    if (!amountUsdRaw) {
-      amountCopInput.value = "";
-      return;
-    }
-
-    const amountUsd = Number(amountUsdRaw);
-    if (!Number.isFinite(amountUsd) || !Number.isFinite(usdCop) || usdCop <= 0) {
-      return;
-    }
-
-    amountCopInput.value = String(roundIncomeDisplayValue(amountUsd * usdCop));
-  }
-}
-
 function buildIncomeUpdates(incomeField, field, row) {
   if (incomeField === "received" && field instanceof HTMLInputElement) {
     return { received: field.checked };
@@ -6630,48 +6145,18 @@ function buildIncomeUpdates(incomeField, field, row) {
     return { description: field.value.trim() };
   }
 
+  // Only the amount that was typed travels. The server recomputes the other
+  // two from the rate, so this app and the React one write the same cents.
   if (
     (incomeField === "amount_usd" || incomeField === "amount_cop" || incomeField === "usd_cop")
     && field instanceof HTMLInputElement
   ) {
-    const amountUsdInput = getIncomeRowInput(row, "amount_usd");
-    const usdCopInput = getIncomeRowInput(row, "usd_cop");
-    const amountCopInput = getIncomeRowInput(row, "amount_cop");
-    if (!amountUsdInput || !usdCopInput || !amountCopInput) {
-      throw new Error("Income row is incomplete");
+    const typed = Number(String(field.value || "").trim());
+    if (!Number.isFinite(typed)) {
+      throw new Error("Invalid income amount");
     }
 
-    const amountUsdRaw = String(amountUsdInput.value || "").trim();
-    const amountCopRaw = String(amountCopInput.value || "").trim();
-    const amountUsd = amountUsdRaw ? Number(amountUsdRaw) : 0;
-    const amountCop = amountCopRaw ? Number(amountCopRaw) : 0;
-    const usdCop = Number(usdCopInput.value);
-
-    if (!Number.isFinite(usdCop) || usdCop <= 0) {
-      throw new Error("Invalid income FX");
-    }
-
-    if (incomeField === "amount_cop") {
-      if (!Number.isFinite(amountCop) || !Number.isFinite(amountUsd)) {
-        throw new Error("Invalid income COP");
-      }
-
-      return {
-        amount_usd: amountUsd,
-        amount_cop: amountCop,
-        usd_cop: usdCop,
-      };
-    }
-
-    if (!Number.isFinite(amountUsd)) {
-      throw new Error("Invalid income USD");
-    }
-
-    return {
-      amount_usd: amountUsd,
-      amount_cop: amountCop,
-      usd_cop: usdCop,
-    };
+    return { [incomeField]: typed };
   }
 
   return null;
@@ -6791,9 +6276,7 @@ async function handleCreateIncomeSubmit(event) {
   const amountUsdRaw = String(dom.createIncomeUsd.value || "").trim();
   const amountCopRaw = String(dom.createIncomeCop?.value || "").trim();
   const usdCop = Number(dom.createIncomeFx.value);
-  const amountUsd = amountUsdRaw ? Number(amountUsdRaw) : Number(amountCopRaw) / usdCop;
-  const amountCop = amountCopRaw ? Number(amountCopRaw) : Number(amountUsdRaw) * usdCop;
-  if (!Number.isFinite(amountUsd) || !Number.isFinite(usdCop) || !Number.isFinite(amountCop)) {
+  if (!Number.isFinite(usdCop)) {
     return;
   }
 
@@ -6806,12 +6289,14 @@ async function handleCreateIncomeSubmit(event) {
     await createIncomeEntry({
       path: month.incomeSourcePath,
       monthIndex: month.index,
+      // The amount left blank is not sent: the server derives it from the
+      // other one and the rate, so the conversion lives in a single place.
       entry: {
         received: dom.createIncomeReceived.checked,
         description: dom.createIncomeDescription.value,
-        amount_usd: amountUsd,
         usd_cop: usdCop,
-        amount_cop: amountCop,
+        ...(amountUsdRaw ? { amount_usd: Number(amountUsdRaw) } : {}),
+        ...(amountCopRaw ? { amount_cop: Number(amountCopRaw) } : {}),
       },
     });
     closeCreateIncomeDialog();
@@ -6958,25 +6443,6 @@ function handleMonthlyIncomeDragEnd() {
   clearMonthlyIncomeDropIndicators();
 }
 
-function handleMonthlyIncomeFieldInput(event) {
-  const field = event.target;
-  if (!(field instanceof HTMLInputElement)) {
-    return;
-  }
-
-  const incomeField = field.dataset.incomeField;
-  if (!incomeField || !["amount_usd", "amount_cop", "usd_cop"].includes(incomeField)) {
-    return;
-  }
-
-  const row = field.closest("tr[data-income-row='true']");
-  if (!(row instanceof HTMLTableRowElement)) {
-    return;
-  }
-
-  syncMonthlyIncomeRowAmounts(row, incomeField);
-}
-
 async function handleMonthlyIncomeFieldChange(event) {
   const field = event.target;
   if (!(field instanceof HTMLInputElement)) {
@@ -6990,13 +6456,6 @@ async function handleMonthlyIncomeFieldChange(event) {
 
   if (!incomeField || !sourcePath || !Number.isInteger(monthIndex) || !Number.isInteger(sourceIndex)) {
     return;
-  }
-
-  if (["amount_usd", "amount_cop", "usd_cop"].includes(incomeField)) {
-    const incomeRow = field.closest("tr[data-income-row='true']");
-    if (incomeRow instanceof HTMLTableRowElement) {
-      syncMonthlyIncomeRowAmounts(incomeRow, incomeField);
-    }
   }
 
   const row = field.closest("tr");
@@ -7017,6 +6476,7 @@ async function handleMonthlyIncomeFieldChange(event) {
       monthIndex,
       incomeIndex: sourceIndex,
       updates,
+      syncFrom: ["amount_usd", "amount_cop", "usd_cop"].includes(incomeField) ? incomeField : "",
     });
     state.signature = "";
     await refreshDashboard({ force: true });
@@ -8022,7 +7482,7 @@ async function updateEntryFields({ path, entryIndex, updates }) {
   return response.json();
 }
 
-async function updateIncomeFields({ path, monthIndex, incomeIndex, updates }) {
+async function updateIncomeFields({ path, monthIndex, incomeIndex, updates, syncFrom = "" }) {
   const response = await fetch("/api/incomes/update", {
     method: "POST",
     headers: {
@@ -8033,6 +7493,7 @@ async function updateIncomeFields({ path, monthIndex, incomeIndex, updates }) {
       month_index: monthIndex,
       income_index: incomeIndex,
       updates,
+      ...(syncFrom ? { sync_from: syncFrom } : {}),
     }),
   });
 
@@ -8324,19 +7785,6 @@ function buildSegmentsFromTotals(typeTotals) {
   }));
 }
 
-function buildMonthlyDisplayTypes(typeTotals, free) {
-  const displayTypes = TYPE_ORDER.reduce((accumulator, typeKey) => {
-    accumulator[typeKey] = normalizeCop(typeTotals[typeKey]);
-    return accumulator;
-  }, {});
-
-  if (free > 0) {
-    displayTypes.wants = normalizeCop(displayTypes.wants + free);
-  }
-
-  return displayTypes;
-}
-
 function buildMonthlySegments(displayTypes, free) {
   const segments = buildSegmentsFromTotals(
     TYPE_DISPLAY_ORDER.reduce((accumulator, typeKey) => {
@@ -8354,28 +7802,6 @@ function buildMonthlySegments(displayTypes, free) {
   }
 
   return segments;
-}
-
-function aggregateBy(entries, key) {
-  const totals = new Map();
-
-  entries.forEach((entry) => {
-    const bucket = entry[key];
-    totals.set(bucket, (totals.get(bucket) || 0) + entry.amountCop);
-  });
-
-  return [...totals.entries()]
-    .map(([bucket, total]) => ({ key: bucket, total }))
-    .sort((left, right) => right.total - left.total);
-}
-
-function buildFreeDisplayEntry(amountCop) {
-  return {
-    typeKey: "wants",
-    description: "Free",
-    category: "Free",
-    amountCop: normalizeCop(amountCop),
-  };
 }
 
 function normalizeOutcomeType(value) {
@@ -8410,12 +7836,6 @@ function compareIncomeEntries(left, right) {
   return String(left.description || "").localeCompare(String(right.description || ""), getUiLocale(), {
     sensitivity: "base",
   });
-}
-
-function isFreeAllocationEntry(entry) {
-  const description = String(entry.description || "").trim().toLowerCase();
-  const category = String(entry.category || "").trim().toLowerCase();
-  return description === "free" || category === "free";
 }
 
 function getDefaultMonthIndex() {
@@ -9037,56 +8457,11 @@ function getDebtTotalInstallments(debt) {
 }
 
 function getDebtProgress(debt) {
+  if (Number.isFinite(debt?.progress)) {
+    return debt.progress;
+  }
   const totalInstallments = debt.termMonths || getDebtTotalInstallments(debt);
   return totalInstallments > 0 ? (debt.paidInstallments / totalInstallments) * 100 : 0;
-}
-
-function isDebtLinkedCashFlowEntry(entry, link, debtId) {
-  if (link.type && entry.typeKey !== link.type) {
-    return false;
-  }
-
-  const ids = Array.isArray(entry.linkedDebts) ? entry.linkedDebts : [];
-  if (debtId && ids.length > 0 && ids.includes(String(debtId))) {
-    return true;
-  }
-
-  const description = String(link.description || "").trim();
-  if (!description) {
-    return false;
-  }
-  return normalizeDebtLinkText(entry.descriptionRaw || entry.description)
-    === normalizeDebtLinkText(description);
-}
-
-function isDebtCashFlowAbono(entry) {
-  if (entry?.extraPayment === true) {
-    return true;
-  }
-  const category = normalizeDebtLinkText(entry.categoryRaw || entry.category);
-  return category === "abono" || category === "abonos";
-}
-
-function getDebtCashFlowPeriod(link, month, currentYear) {
-  const startMonthIndex = getMonthIndexFromFolder(link.startMonth);
-  if (startMonthIndex < 0) {
-    return 0;
-  }
-
-  const startYear = String(link.startYear || currentYear || "").trim();
-  const selectedYear = String(currentYear || "").trim();
-  const startYearNumber = Number(startYear);
-  const selectedYearNumber = Number(selectedYear);
-
-  if (Number.isInteger(startYearNumber) && Number.isInteger(selectedYearNumber)) {
-    return ((selectedYearNumber - startYearNumber) * 12) + month.index - startMonthIndex + 1;
-  }
-
-  if (startYear && selectedYear && startYear !== selectedYear) {
-    return 0;
-  }
-
-  return month.index - startMonthIndex + 1;
 }
 
 function getMonthIndexFromFolder(folder) {
@@ -9126,11 +8501,6 @@ function resolveDebtTermMonths(baseDebt, override = {}) {
 
 function clampDebtTermMonths(value) {
   return clampNumber(Math.round(toNumber(value)), 1, 600);
-}
-
-function calculateMonthlyInterestRate(annualInterestRate) {
-  const annualRate = clampNumber(annualInterestRate, 0, 200) / 100;
-  return annualRate > 0 ? (Math.pow(1 + annualRate, 1 / 12) - 1) * 100 : 0;
 }
 
 function getCategoryBarPalette(categoryKey) {

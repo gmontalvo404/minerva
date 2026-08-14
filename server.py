@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import math
 import os
+import re
 import subprocess
 import sys
 from copy import deepcopy
@@ -11,7 +13,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import time
 import unicodedata
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 from urllib.request import Request, urlopen
 import webbrowser
 
@@ -49,7 +51,13 @@ DATA_URL_PREFIX = "finance/data"
 DEMO_URL_PREFIX = "finance/app/demo"
 FINANCE_DATA_ROOT, DATA_ROOT_WARNING = _data_root_from_env((ROOT / DATA_URL_PREFIX).resolve())
 DEMO_DATA_ROOT = (ROOT / DEMO_URL_PREFIX).resolve()
+
+# A year folder inside cash_flow: "2026", "demo", "2027-draft".
+YEAR_KEY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$", re.IGNORECASE)
 ALLOWED_TYPES = {"needs", "wants", "savings", "debts"}
+# TYPE_ORDER / TYPE_DISPLAY_ORDER in app.js: savings leads the display order.
+TYPE_ORDER = ("needs", "wants", "savings", "debts")
+TYPE_DISPLAY_ORDER = ("savings", "needs", "wants", "debts")
 MONTH_FOLDERS = (
     "01-january", "02-february", "03-march", "04-april",
     "05-may", "06-june", "07-july", "08-august",
@@ -146,6 +154,45 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                 self._handle_get_usd_cop_rate()
             except Exception as error:  # noqa: BLE001
                 self._send_json(HTTPStatus.BAD_GATEWAY, {"ok": False, "error": str(error)})
+            return
+        if parsed_path.path == "/api/dashboard":
+            try:
+                self._handle_get_dashboard(parse_qs(parsed_path.query))
+            except (KeyError, TypeError, ValueError, IndexError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(error)})
+            except FileNotFoundError:
+                self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "File not found"})
+            return
+        if parsed_path.path == "/api/nutrition/shopping":
+            try:
+                self._handle_get_shopping_list(parse_qs(parsed_path.query))
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(error)})
+            except FileNotFoundError:
+                self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "File not found"})
+            return
+        if parsed_path.path == "/api/debts/simulate":
+            try:
+                self._handle_simulate_debt(parse_qs(parsed_path.query))
+            except (KeyError, TypeError, ValueError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(error)})
+            return
+        if parsed_path.path == "/api/debts/links":
+            try:
+                self._handle_get_debt_links(parse_qs(parsed_path.query))
+            except (KeyError, TypeError, ValueError, IndexError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(error)})
+            except FileNotFoundError:
+                self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "File not found"})
+            return
+
+        if parsed_path.path == "/api/debts/detail":
+            try:
+                self._handle_get_debts_detail(parse_qs(parsed_path.query))
+            except (KeyError, TypeError, ValueError, IndexError, json.JSONDecodeError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(error)})
+            except FileNotFoundError:
+                self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "File not found"})
             return
 
         super().do_GET()
@@ -533,6 +580,11 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         self._ensure_entry_audit_fields(source_entry)
         updated_entry = deepcopy(source_entry)
         normalized_updates = self._normalize_income_updates(updates)
+        normalized_updates = self._sync_income_amounts(
+            source_entry,
+            normalized_updates,
+            str(payload.get("sync_from", "")).strip(),
+        )
         updated_entry.update(normalized_updates)
         if "received" in normalized_updates:
             updated_entry.pop("active", None)
@@ -692,6 +744,939 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         except Exception as error:  # noqa: BLE001
             return {"error": str(error)}
 
+    def _handle_get_debts_detail(self, query: dict) -> None:
+        """Debts with their schedule and totals already computed.
+
+        The point of this endpoint is that no client has to reimplement the
+        amortization: whoever draws the table asks for the numbers.
+        """
+        relative_path = (query.get("path") or [f"{DATA_URL_PREFIX}/debts/debts.json"])[0]
+        wanted_id = (query.get("id") or [""])[0].strip()
+
+        _, debts, _ = self._load_debts(relative_path)
+
+        # Abonos live in the cash flow, and a plan can cross new year's eve, so
+        # every year the plan spans is read. What a debt owes cannot depend on
+        # which year the reader has on screen.
+        payload = [
+            self._build_debt_detail(debt, self._debt_linked_payments_across_years(debt, debts))
+            for debt in debts
+            if isinstance(debt, dict) and (not wanted_id or str(debt.get("id", "")) == wanted_id)
+        ]
+
+        self._send_json(HTTPStatus.OK, {"ok": True, "path": relative_path, "debts": payload})
+
+    def _handle_get_debt_links(self, query: dict) -> None:
+        """Every movement that pays one debt, across the whole plan.
+
+        The debt link dialog lists them so you can see what the link is
+        actually catching before changing it.
+        """
+        relative_path = (query.get("path") or [f"{DATA_URL_PREFIX}/debts/debts.json"])[0]
+        debt_id = (query.get("debt_id") or [""])[0].strip()
+
+        _, debts, _ = self._load_debts(relative_path)
+        debt = next(
+            (item for item in debts if isinstance(item, dict) and str(item.get("id", "")) == debt_id),
+            None,
+        )
+        payments = self._debt_linked_payments_across_years(debt, debts) if debt else []
+
+        self._send_json(HTTPStatus.OK, {"ok": True, "path": relative_path, "payments": payments})
+
+    # --- Dashboard -------------------------------------------------------
+    #
+    # buildDashboard used to live in app.js and was copied again in the React
+    # client. Both copies had to agree on what "free" means, which type absorbs
+    # the leftover and how categories are aggregated. Now there is one.
+
+    @staticmethod
+    def _entry_is_free_allocation(entry: dict) -> bool:
+        """The leftover placeholder is not a real expense."""
+        description = str(entry.get("description", "")).strip().lower()
+        category = str(entry.get("category", "")).strip().lower()
+        return description == "free" or category == "free"
+
+    @staticmethod
+    def _entry_sort_key(entry: dict) -> tuple:
+        """compareEntries: savings first, then the position in the file."""
+        entry_type = str(entry.get("type", "")).strip().lower()
+        if entry_type not in TYPE_DISPLAY_ORDER:
+            entry_type = "needs"
+        return (
+            TYPE_DISPLAY_ORDER.index(entry_type),
+            entry.get("source_index", 2**53),
+            str(entry.get("description", "")).lower(),
+        )
+
+    @staticmethod
+    def _entry_is_paid(entry: dict) -> bool:
+        if "paid" in entry:
+            return bool(entry["paid"])
+        return bool(entry.get("active", False))
+
+    def _read_month_entries(self, cash_flow_root: str, year: str, folder: str) -> list:
+        """The month's expenses, from the unified file or the legacy per-type ones."""
+        unified = f"{cash_flow_root}/{year}/outcomes/{folder}.json"
+        try:
+            path = self._resolve_data_path(unified)
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+            document = None
+
+        if isinstance(document, dict) and isinstance(document.get("entries"), list):
+            return [
+                {**entry, "source_path": unified, "source_index": index}
+                for index, entry in enumerate(document["entries"])
+                if isinstance(entry, dict)
+            ]
+
+        entries = []
+        for entry_type in sorted(ALLOWED_TYPES):
+            relative = f"{cash_flow_root}/{year}/outcomes/{folder}/{entry_type}.json"
+            try:
+                path = self._resolve_data_path(relative)
+                legacy = json.loads(path.read_text(encoding="utf-8"))
+            except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+                continue
+            for index, entry in enumerate(legacy.get("entries", [])):
+                if isinstance(entry, dict):
+                    entries.append({
+                        **entry,
+                        "type": entry.get("type", entry_type),
+                        "source_path": relative,
+                        "source_index": index,
+                    })
+        return entries
+
+    def _shared_categories_count(self) -> int:
+        """How many categories the catalog has, which is what the KPI names."""
+        # The catalog is not part of any dataset: it ships with the app.
+        try:
+            path = Path(__file__).resolve().parent / "finance" / "app" / "shared" / "categories.json"
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+            return 0
+        categories = document.get("categories")
+        return len(categories) if isinstance(categories, list) else 0
+
+    @staticmethod
+    def _display_usd(value: float) -> float:
+        """normalizeUsd: two decimals, rounded half up like JavaScript does.
+
+        Python rounds halves to even, so 5.345 would land on 5.34 here and on
+        5.35 in the browser, and every USD column would be a cent apart.
+        """
+        if value != value or abs(value) == float("inf") or abs(value) < 0.005:
+            return 0.0
+        return math.floor(value * 100 + 0.5) / 100
+
+    @staticmethod
+    def _display_cop(value: float) -> float:
+        """normalizeCop: whole pesos, and anything under half a peso is zero.
+
+        Math.round in JavaScript rounds half up, including on negatives, which
+        is what floor(value + 0.5) reproduces.
+        """
+        if value != value or abs(value) == float("inf") or abs(value) < 0.5:
+            return 0.0
+        return float(math.floor(value + 0.5))
+
+    def _month_source_paths(self, cash_flow_root: str, year: str, folder: str) -> dict:
+        """Which file each type is written to: one unified file, or one per type."""
+        unified = f"{cash_flow_root}/{year}/outcomes/{folder}.json"
+        try:
+            if self._resolve_data_path(unified).exists():
+                return {entry_type: unified for entry_type in sorted(ALLOWED_TYPES)}
+        except (FileNotFoundError, OSError, ValueError):
+            pass
+        return {
+            entry_type: f"{cash_flow_root}/{year}/outcomes/{folder}/{entry_type}.json"
+            for entry_type in sorted(ALLOWED_TYPES)
+        }
+
+    def _summarize_month(self, index: int, income_month: dict, entries: list) -> dict:
+        planned = [entry for entry in entries if not self._entry_is_free_allocation(entry)]
+
+        by_type = {key: 0.0 for key in sorted(ALLOWED_TYPES)}
+        by_category: dict[str, float] = {}
+        total_outcomes = 0.0
+        paid_outcomes = 0.0
+
+        for entry in planned:
+            value = self._display_cop(self._to_finite_float(entry.get("amount_cop", 0)))
+            total_outcomes += value
+            if self._entry_is_paid(entry):
+                paid_outcomes += value
+
+            entry_type = str(entry.get("type", "")).strip().lower()
+            if entry_type not in by_type:
+                entry_type = "needs"
+            by_type[entry_type] += value
+
+            category = str(entry.get("category", "")).strip() or "—"
+            by_category[category] = by_category.get(category, 0.0) + value
+
+        # The income of a month is what its entries add up to, the same way the
+        # clients read it. The totals stored in the file can be stale, and then
+        # the free cash of the month would be off by that much.
+        income_entries = income_month.get("entries")
+        if isinstance(income_entries, list) and income_entries:
+            income_usd = 0.0
+            income_cop = 0.0
+            for entry in income_entries:
+                if not isinstance(entry, dict):
+                    continue
+                entry_usd = self._to_finite_float(entry.get("amount_usd", 0))
+                entry_rate = self._to_finite_float(entry.get("usd_cop", 0))
+                income_usd += entry_usd
+                income_cop += self._to_finite_float(entry.get("amount_cop", 0)) or entry_usd * entry_rate
+        else:
+            income_cop = self._to_finite_float(income_month.get("income_cop", 0))
+            income_usd = self._to_finite_float(income_month.get("income_usd", 0))
+
+        income_cop = self._display_cop(income_cop)
+        total_outcomes = self._display_cop(total_outcomes)
+        paid_outcomes = self._display_cop(paid_outcomes)
+        by_type = {key: self._display_cop(value) for key, value in by_type.items()}
+        by_category = {name: self._display_cop(value) for name, value in by_category.items()}
+
+        usd_cop = round(income_cop / income_usd, 2) if income_usd > 0 else 0.0
+        free = self._display_cop(income_cop - total_outcomes)
+
+        # buildMonthlyDisplayTypes + buildFreeDisplayEntry: the leftover shows as
+        # "wants" in the charts and as a "Free" category in the bars.
+        display_types = dict(by_type)
+        if free > 0:
+            display_types["wants"] += free
+            by_category["Free"] = by_category.get("Free", 0.0) + free
+
+        # What is left after paying what is already paid, and the same figures
+        # in dollars and as a share of the income. The clients used to work
+        # these out themselves, each with its own rounding.
+        after_paid = self._display_cop(income_cop - paid_outcomes)
+
+        def to_usd(value: float) -> float:
+            return self._display_usd(value / usd_cop) if usd_cop > 0 else 0.0
+
+        def share(value: float) -> float:
+            return (value / income_cop * 100) if income_cop > 0 else 0.0
+
+        def row(label: str, value: float) -> dict:
+            return {"label": label, "cop": value, "usd": to_usd(value), "ratio": share(value)}
+
+        # renderMonthlySummaryTable: incomes first, the four types, what is left
+        # after paying, and the deficit only when there is one.
+        # TYPE_DISPLAY_ORDER: savings leads, the rest keep their order.
+        summary_rows = [
+            {"label": "incomes", "cop": income_cop, "usd": round(income_usd, 2), "ratio": 100.0},
+            *(row(key, display_types[key]) for key in ("savings", "needs", "wants", "debts")),
+            row("after_paid", after_paid),
+        ]
+        if free < 0:
+            summary_rows.append(row("deficit", abs(free)))
+
+        return {
+            "index": index,
+            "folder": MONTH_FOLDERS[index],
+            "name": income_month.get("name", ""),
+            "income_cop": income_cop,
+            "income_usd": round(income_usd, 2),
+            "usd_cop": usd_cop,
+            "incomes": income_month.get("entries", []) or [],
+            "entries": [
+                {
+                    **entry,
+                    "amount_usd": self._display_usd(self._to_finite_float(entry.get("amount_cop", 0)) / usd_cop)
+                    if usd_cop > 0
+                    else 0.0,
+                }
+                for entry in sorted(planned, key=self._entry_sort_key)
+            ],
+            "total_outcomes": total_outcomes,
+            "paid_outcomes": paid_outcomes,
+            "free": free,
+            "after_paid": after_paid,
+            "summary_rows": summary_rows,
+            # The annual table reads its columns from here, so it never divides
+            # by a rate itself.
+            "usd": {
+                "income": to_usd(income_cop),
+                "outcomes": to_usd(total_outcomes),
+                "free": to_usd(free),
+                "needs": to_usd(by_type["needs"]),
+                "wants": to_usd(display_types["wants"]),
+                "savings": to_usd(by_type["savings"]),
+                "debts": to_usd(by_type["debts"]),
+            },
+            "by_type": by_type,
+            "display_types": display_types,
+            "by_category": sorted(
+                ({"category": name, "total": value} for name, value in by_category.items()),
+                key=lambda item: -item["total"],
+            ),
+        }
+
+    def _discover_years(self, cash_flow_root: str) -> list:
+        try:
+            root, _ = resolve_dataset_path(cash_flow_root)
+        except ValueError:
+            return []
+        if not root.is_dir():
+            return []
+
+        years = sorted(
+            (child.name for child in root.iterdir() if child.is_dir()),
+            key=lambda name: (0, int(name)) if name.isdigit() else (1, 0),
+        )
+        return [name for name in years if YEAR_KEY_PATTERN.match(name)]
+
+    def _handle_get_dashboard(self, query: dict) -> None:
+        """A year of cash flow, already aggregated: months, totals and categories."""
+        cash_flow_root = (query.get("path") or [f"{DATA_URL_PREFIX}/cash_flow"])[0].strip("/")
+        years = self._discover_years(cash_flow_root)
+        year = (query.get("year") or [""])[0].strip() or (years[0] if years else "")
+
+        if not year:
+            self._send_json(HTTPStatus.OK, {"ok": True, "years": [], "year": "", "months": [], "annual": None})
+            return
+
+        try:
+            incomes_path = self._resolve_data_path(f"{cash_flow_root}/{year}/incomes/incomes.json")
+            incomes = json.loads(incomes_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+            incomes = {"months": []}
+
+        income_months = incomes.get("months") or []
+        months = []
+        for index, folder in enumerate(MONTH_FOLDERS):
+            income_month = (
+                income_months[index]
+                if index < len(income_months) and isinstance(income_months[index], dict)
+                else {}
+            )
+            summary = self._summarize_month(
+                index, income_month, self._read_month_entries(cash_flow_root, year, folder)
+            )
+            summary["source_path_by_type"] = self._month_source_paths(cash_flow_root, year, folder)
+            months.append(summary)
+
+        by_type = {key: 0.0 for key in sorted(ALLOWED_TYPES)}
+        display_types = dict(by_type)
+        by_category: dict[str, float] = {}
+        for month in months:
+            for key in by_type:
+                by_type[key] += month["by_type"][key]
+                display_types[key] += month["display_types"][key]
+            for item in month["by_category"]:
+                by_category[item["category"]] = by_category.get(item["category"], 0.0) + item["total"]
+
+        income_cop = self._display_cop(sum(month["income_cop"] for month in months))
+        income_usd = sum(month["income_usd"] for month in months)
+        total_outcomes = self._display_cop(sum(month["total_outcomes"] for month in months))
+        # The leftover of the year is what the months left over, added up: the
+        # difference of the two totals can land a peso away from it.
+        free = self._display_cop(sum(month["free"] for month in months))
+        rates = [month["usd_cop"] for month in months]
+
+        # The total column of the annual table. In pesos it is the sum of the
+        # months; in dollars each month converts at its own rate first, so a
+        # year of moving FX adds up the way it was actually earned.
+        def annual_metric(pick) -> dict:
+            return {
+                "cop": self._display_cop(sum(pick(month) for month in months)),
+                "usd": self._display_usd(
+                    sum(pick(month) / month["usd_cop"] for month in months if month["usd_cop"] > 0)
+                ),
+            }
+
+        annual_totals = {
+            "income": annual_metric(lambda month: month["income_cop"]),
+            "outcomes": annual_metric(lambda month: month["total_outcomes"]),
+            "free": annual_metric(lambda month: month["free"]),
+            "needs": annual_metric(lambda month: month["by_type"]["needs"]),
+            "wants": annual_metric(lambda month: month["display_types"]["wants"]),
+            "savings": annual_metric(lambda month: month["by_type"]["savings"]),
+            "debts": annual_metric(lambda month: month["by_type"]["debts"]),
+        }
+
+        annual = {
+            "income_cop": income_cop,
+            "income_usd": round(income_usd, 2),
+            "total_outcomes": total_outcomes,
+            "free": free,
+            "totals": annual_totals,
+            "average_free": self._display_cop(free / len(MONTH_FOLDERS)),
+            "average_fx": round(sum(rates) / len(rates), 2) if rates else 0.0,
+            # "36 registered categories": the shared catalog, not the ones used.
+            "categories_count": self._shared_categories_count(),
+            "by_type": {key: self._display_cop(value) for key, value in by_type.items()},
+            "display_types": {key: self._display_cop(value) for key, value in display_types.items()},
+            "by_category": sorted(
+                ({"category": name, "total": self._display_cop(value)} for name, value in by_category.items()),
+                key=lambda item: -item["total"],
+            ),
+        }
+
+        self._send_json(
+            HTTPStatus.OK,
+            {"ok": True, "years": years, "year": year, "months": months, "annual": annual},
+        )
+
+    @staticmethod
+    def _ingredient_labels(ingredient: dict) -> list[str]:
+        """The labels of an ingredient: rice is a grain and a carbohydrate.
+
+        Files written before labels were plural hold a plain string, and are
+        read the same way — one label, or several separated by commas.
+        """
+        raw = ingredient.get("category", "")
+        items = raw if isinstance(raw, list) else str(raw or "").split(",")
+
+        labels: list[str] = []
+        for item in items:
+            label = str(item or "").strip()
+            if label and label not in labels:
+                labels.append(label)
+        return labels
+
+    def _handle_get_shopping_list(self, query: dict) -> None:
+        """The week's shopping list, priced with the ingredient catalog."""
+        relative_path = (query.get("path") or [f"{DATA_URL_PREFIX}/nutrition/plan.json"])[0]
+        target_path = self._resolve_data_path(relative_path)
+        try:
+            plan = json.loads(target_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            plan = {}
+
+        catalog = {
+            str(item.get("id", "")): item
+            for item in plan.get("ingredients", [])
+            if isinstance(item, dict)
+        }
+        meals = plan.get("meals") or {}
+        quantities: dict[str, float] = {}
+        order: list[str] = []
+
+        for day in plan.get("week") or []:
+            if not isinstance(day, dict):
+                continue
+            for meal_type in ("breakfast", "lunch", "snack", "dinner"):
+                meal_id = day.get(meal_type)
+                if not meal_id:
+                    continue
+                meal = next(
+                    (item for item in meals.get(meal_type, []) if isinstance(item, dict) and item.get("id") == meal_id),
+                    None,
+                )
+                if not meal:
+                    continue
+                for item in meal.get("items", []):
+                    if not isinstance(item, dict):
+                        continue
+                    ingredient = str(item.get("ingredient", ""))
+                    if ingredient not in quantities:
+                        quantities[ingredient] = 0.0
+                        order.append(ingredient)
+                    quantities[ingredient] += self._to_finite_float(item.get("qty", 0))
+
+        lines = []
+        for ingredient_id in order:
+            ingredient = catalog.get(ingredient_id, {})
+            qty = quantities[ingredient_id]
+            price = self._to_finite_float(ingredient.get("price_per_unit", 0))
+            lines.append({
+                "id": ingredient_id,
+                "name": ingredient.get("name", ingredient_id),
+                "unit": ingredient.get("unit", ""),
+                "categories": self._ingredient_labels(ingredient),
+                # Joined too, for anything that still expects a single string.
+                "category": ", ".join(self._ingredient_labels(ingredient)),
+                "store": ingredient.get("store", ""),
+                "qty": round(qty, 4),
+                "price": round(price, 2),
+                "total": round(qty * price, 2),
+            })
+
+        lines.sort(key=lambda line: (line["store"], -line["total"]))
+
+        # What each meal costs, so neither client multiplies prices by hand.
+        meal_costs: dict[str, float] = {}
+        for meal_list in meals.values():
+            for meal in meal_list or []:
+                if not isinstance(meal, dict) or not meal.get("id"):
+                    continue
+                cost = 0.0
+                for item in meal.get("items", []):
+                    if not isinstance(item, dict):
+                        continue
+                    ingredient = catalog.get(str(item.get("ingredient", "")), {})
+                    cost += self._to_finite_float(ingredient.get("price_per_unit", 0)) * self._to_finite_float(
+                        item.get("qty", 0)
+                    )
+                meal_costs[str(meal["id"])] = round(cost, 2)
+
+        days = [day for day in plan.get("week") or [] if isinstance(day, dict)]
+        assigned = [
+            str(day.get(meal_type))
+            for day in days
+            for meal_type in ("breakfast", "lunch", "snack", "dinner")
+            if day.get(meal_type)
+        ]
+        weekly_cost = sum(meal_costs.get(meal_id, 0.0) for meal_id in assigned)
+
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "ok": True,
+                "path": relative_path,
+                "lines": lines,
+                "total": round(sum(line["total"] for line in lines), 2),
+                "meal_costs": meal_costs,
+                "weekly_cost": round(weekly_cost, 2),
+                "daily_average": round(weekly_cost / len(days), 2) if days else 0.0,
+                "assigned_meals": len(assigned),
+                "total_slots": len(days) * 4,
+            },
+        )
+
+    def _handle_simulate_debt(self, query: dict) -> None:
+        """The credit simulator, priced by the same engine as a real debt.
+
+        It writes nothing: the numbers come from the query string, so the
+        simulator and the debts table can never disagree on the math.
+        """
+        def number(name: str, default: float = 0.0) -> float:
+            raw = (query.get(name) or [str(default)])[0]
+            return self._to_finite_float(raw)
+
+        debt = {
+            "capital": number("capital"),
+            "initial_investment": number("initial_investment"),
+            "annual_interest_rate": (query.get("annual_interest_rate") or ["0"])[0],
+            "term_months": int(number("term_months", 1)) or 1,
+            "insurance": number("insurance"),
+            "other_charges": number("other_charges"),
+        }
+
+        self._send_json(HTTPStatus.OK, {"ok": True, "simulation": self._build_debt_detail(debt)})
+
+    def _debt_term_months(self, debt: dict) -> int:
+        """clampDebtTermMonths: a plan is between one month and fifty years."""
+        try:
+            return self._to_bounded_int(debt.get("term_months", 1), minimum=1, maximum=600)
+        except ValueError:
+            return 1
+
+    @staticmethod
+    def _debt_installment(capital: float, monthly_rate: float, term: int) -> float:
+        """calculateDebtInstallment: the French amortization fee."""
+        if not capital or not term:
+            return 0.0
+        if monthly_rate <= 0:
+            return capital / term
+        return (capital * monthly_rate) / (1 - (1 + monthly_rate) ** -term)
+
+    def _debt_linked_payments_across_years(self, debt: dict, debts: list) -> list:
+        """Every movement of the plan, whatever year it lives in.
+
+        Reading only the year on screen made the same debt come out active or
+        canceled depending on which year you happened to be browsing, and made
+        two windows on the same data disagree.
+        """
+        term = self._debt_term_months(debt)
+        if term <= 0:
+            return []
+
+        start_year, start_month_index = self._debt_link_start(debt)
+        if start_year is None or start_month_index < 0:
+            # Datasets whose year is a name, like the demo: walk what is there.
+            years = self._discover_years(self._dataset_relative(self._cash_flow_root))
+        else:
+            end_year = start_year + (start_month_index + term - 1) // 12
+            years = [str(year) for year in range(start_year, end_year + 1)]
+
+        matches = []
+        for year in years:
+            matches.extend(
+                payment
+                for payment in self._debt_linked_payments(debt, debts, year)
+                if payment["period"] <= term
+            )
+        return matches
+
+    def _build_debt_detail(self, debt: dict, linked_payments: list | None = None) -> dict:
+        """One debt, priced. Same numbers the auto cash flow entries use.
+
+        buildDebtDetail, including the abonos: a manual payment linked to the
+        debt goes against the capital, which shortens the plan (or lowers the
+        fee, if the debt asks for that) instead of just sitting in the month.
+        """
+        capital = self._to_finite_float(debt.get("capital", 0))
+        initial_investment = self._to_finite_float(debt.get("initial_investment", 0))
+        financed = max(capital - initial_investment, 0.0)
+        insurance = self._to_finite_float(debt.get("insurance", 0))
+        other_charges = self._to_finite_float(debt.get("other_charges", 0))
+        term = self._debt_term_months(debt)
+        monthly_rate = self._debt_monthly_rate(debt)
+
+        payments = linked_payments or []
+        pre_schedule = [payment for payment in payments if payment.get("pre_schedule")]
+        by_period = {
+            int(payment["period"]): payment
+            for payment in payments
+            if not payment.get("pre_schedule")
+        }
+
+        # reduce_term keeps the fee and ends earlier; reduce_payment recomputes
+        # the fee over what is left. The debt says which one it wants.
+        strategy = "reduce_payment" if str(debt.get("abono_strategy", "")) == "reduce_payment" else "reduce_term"
+
+        pre_total = self._debt_amount(sum(payment["abono_amount_cop"] for payment in pre_schedule))
+        pre_paid = any(payment.get("paid") for payment in pre_schedule)
+        initial_balance = max(financed - pre_total, 0.0)
+        applied_pre = max(financed - initial_balance, 0.0)
+
+        installment_base = initial_balance if (strategy == "reduce_payment" and applied_pre > 0) else financed
+        installment = self._debt_installment(installment_base, monthly_rate, term)
+        payment_base = self._debt_payment_base(debt, installment)
+        actual_payment = payment_base + insurance + other_charges
+
+        start_year, start_month_index = self._debt_link_start(debt)
+        today = datetime.now()
+        today_absolute = today.year * 12 + today.month - 1
+
+        first_pre = min(pre_schedule, key=lambda payment: payment.get("month_index", 0), default=None)
+        schedule = [{
+            "period": 0,
+            "installment": 0.0,
+            "insurance": 0.0,
+            "other_charges": 0.0,
+            "interest": 0.0,
+            "principal": 0.0,
+            "extra_payment": round(applied_pre, 2),
+            "actual_payment": 0.0,
+            "total_payment": 0.0,
+            "paid": bool(pre_paid and applied_pre > 0),
+            "balance": round(initial_balance, 2),
+            "date": "",
+            "pre_schedule_month_index": first_pre.get("month_index") if first_pre else None,
+            "pre_schedule_year": str(first_pre.get("year", "")) if first_pre else "",
+            "pre_schedule_count": len(pre_schedule),
+        }]
+
+        balance = initial_balance
+        current_installment = installment
+        total_interest = 0.0
+        total_insurance = 0.0
+        total_other_charges = 0.0
+
+        for period in range(1, term + 1):
+            interest = balance * monthly_rate
+            regular_principal = max(current_installment - interest, 0.0)
+            principal = balance if period == term else min(regular_principal, balance)
+            period_installment = principal + interest
+            period_total = self._debt_amount(period_installment + insurance + other_charges)
+            linked = by_period.get(period)
+
+            if period_installment <= 0:
+                recurring = 0.0
+            elif strategy == "reduce_payment":
+                recurring = period_total
+            else:
+                recurring = min(actual_payment, period_total)
+
+            extra = self._debt_amount(linked.get("abono_amount_cop", 0) if linked else 0)
+            principal_with_extra = min(principal + extra, balance)
+            applied_extra = max(principal_with_extra - principal, 0.0)
+            balance = max(balance - principal_with_extra, 0.0)
+            total_interest += interest
+            total_insurance += insurance
+            total_other_charges += other_charges
+
+            # Lowering the fee only makes sense while there are periods left.
+            if strategy == "reduce_payment" and applied_extra > 0:
+                remaining_periods = term - period
+                if remaining_periods > 0 and balance > 0:
+                    current_installment = self._debt_installment(balance, monthly_rate, remaining_periods)
+
+            paid = bool(linked.get("paid")) if linked else False
+            date = ""
+            period_year = None
+            period_month_index = None
+            if start_year is not None and start_month_index >= 0:
+                absolute = start_month_index + (period - 1)
+                year = start_year + absolute // 12
+                month_index = absolute % 12
+                period_year, period_month_index = year, month_index
+                date = f"{MONTH_FOLDERS[month_index]} {year}"
+                period_absolute = year * 12 + month_index
+                if not paid:
+                    if period_absolute < today_absolute:
+                        paid = True
+                    elif period_absolute == today_absolute and linked is None:
+                        paid = True
+
+            schedule.append({
+                "period": period,
+                "installment": round(period_installment, 2),
+                "insurance": round(insurance, 2),
+                "other_charges": round(other_charges, 2),
+                "interest": round(interest, 2),
+                "principal": round(principal, 2),
+                "extra_payment": round(applied_extra, 2),
+                "actual_payment": round(recurring, 2),
+                "total_payment": round(recurring + applied_extra, 2),
+                "paid": paid,
+                "balance": round(balance, 2),
+                "date": date,
+                "month_index": period_month_index,
+                "year": period_year,
+            })
+
+        # buildDebtItems: a linked debt counts what the schedule says is paid;
+        # a loose one keeps the number written in the file. A link with nothing
+        # behind it — no movements and no real start date, which is the demo —
+        # would otherwise read as zero paid on a debt the file says is running.
+        derived = sum(1 for row in schedule if row["period"] > 0 and row["paid"])
+        can_derive = bool(payments) or start_year is not None
+        if isinstance(debt.get("cash_flow_link"), dict) and can_derive:
+            paid_installments = min(max(derived, 0), term)
+        else:
+            paid_installments = self._to_bounded_int(
+                debt.get("paid_installments", 0), minimum=0, maximum=term
+            )
+
+        active = sum(1 for row in schedule if row["period"] > 0 and row["total_payment"] > 0)
+        remaining_row = schedule[paid_installments] if paid_installments < len(schedule) else schedule[-1]
+
+        return {
+            "id": str(debt.get("id", "")),
+            "name": debt.get("name"),
+            "capital": round(capital, 2),
+            "initial_investment": round(initial_investment, 2),
+            "financed_capital": round(financed, 2),
+            "annual_interest_rate": self._debt_annual_rate(debt),
+            "monthly_interest_rate": monthly_rate,
+            "term_months": term,
+            "effective_term_months": active or term,
+            "insurance": round(insurance, 2),
+            "other_charges": round(other_charges, 2),
+            "installment": round(installment, 2),
+            "monthly_payment": round(actual_payment, 2),
+            "paid_installments": paid_installments,
+            "remaining_installments": min(max(active - paid_installments, 0), term),
+            "remaining_balance": remaining_row["balance"],
+            # How much of the financed capital is gone, not how many
+            # installments were charged. Counting installments reads 0% for a
+            # debt settled with abonos before the first one, and can never
+            # reach 100% for one paid off early.
+            "progress": ((financed - remaining_row["balance"]) / financed * 100) if financed > 0 else 0.0,
+            "total_interest": round(total_interest, 2),
+            "total_insurance": round(total_insurance, 2),
+            "total_other_charges": round(total_other_charges, 2),
+            "total": round(financed + total_interest + total_insurance + total_other_charges, 2),
+            "abono_strategy": strategy,
+            "cash_flow_link": debt.get("cash_flow_link"),
+            "schedule": schedule,
+        }
+
+    # --- Manual payments -------------------------------------------------
+    #
+    # A movement flagged extra_payment (or filed under an "abono" category)
+    # that points at a debt shortens it. buildDebtLinkedPayments and
+    # buildDebtDetail did this in app.js, so the schedule this endpoint
+    # returned ignored every abono and the balance never moved.
+
+    @staticmethod
+    def _debt_link_text(value) -> str:
+        """normalizeDebtLinkText: links are compared case- and space-insensitively."""
+        return str(value or "").strip().lower()
+
+    @staticmethod
+    def _debt_amount(value) -> float:
+        """normalizeDebtAmountValue: cents, no negatives, nothing below half a cent."""
+        try:
+            amount = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        if amount != amount or abs(amount) == float("inf") or abs(amount) < 0.005:
+            return 0.0
+        return min(max(round(amount, 2), 0.0), 1_000_000_000_000.0)
+
+    @classmethod
+    def _same_debt_link(cls, left, right) -> bool:
+        """isSameDebtCashFlowLink: two debts share a cash flow row."""
+        if not isinstance(left, dict) or not isinstance(right, dict):
+            return False
+        return (
+            cls._debt_link_text(left.get("description")) == cls._debt_link_text(right.get("description"))
+            and str(left.get("type") or "") == str(right.get("type") or "")
+            and str(left.get("start_year") or "") == str(right.get("start_year") or "")
+            and str(left.get("start_month") or "") == str(right.get("start_month") or "")
+        )
+
+    @classmethod
+    def _debt_cash_flow_period(cls, link: dict, month_index: int, selected_year: str) -> int:
+        """getDebtCashFlowPeriod: which installment of the debt a month is."""
+        folder = str(link.get("start_month", "")).strip().lower()
+        if folder not in MONTH_FOLDERS:
+            return 0
+        start_month_index = MONTH_FOLDERS.index(folder)
+
+        start_year = str(link.get("start_year") or selected_year or "").strip()
+        selected = str(selected_year or "").strip()
+        try:
+            return (int(selected) - int(start_year)) * 12 + month_index - start_month_index + 1
+        except ValueError:
+            pass
+
+        # Datasets whose year is a name, like the demo: only its own year counts.
+        if start_year and selected and start_year != selected:
+            return 0
+        return month_index - start_month_index + 1
+
+    @classmethod
+    def _entry_links_debt(cls, entry: dict, link: dict, debt_id: str) -> bool:
+        """isDebtLinkedCashFlowEntry: by explicit id, or by the link description."""
+        link_type = str(link.get("type") or "")
+        if link_type and str(entry.get("type", "")) != link_type:
+            return False
+
+        ids = entry.get("linked_debts")
+        if debt_id and isinstance(ids, list) and any(str(value) == debt_id for value in ids):
+            return True
+
+        description = str(link.get("description", "")).strip()
+        if not description:
+            return False
+        return cls._debt_link_text(entry.get("description")) == cls._debt_link_text(description)
+
+    @classmethod
+    def _entry_is_abono(cls, entry: dict) -> bool:
+        """isDebtCashFlowAbono: the flag, or the category the user typed."""
+        if entry.get("extra_payment") is True:
+            return True
+        return cls._debt_link_text(entry.get("category")) in ("abono", "abonos")
+
+    def _debt_expected_payment(self, debt: dict, period: int) -> float:
+        """getDebtExpectedPaymentForPeriod: the recurring fee, abonos aside."""
+        term = self._debt_term_months(debt)
+        if period <= 0 or period > term:
+            return 0.0
+        capital = self._to_finite_float(debt.get("capital", 0))
+        initial = min(max(self._to_finite_float(debt.get("initial_investment", 0)), 0.0), capital)
+        financed = max(capital - initial, 0.0)
+        monthly_rate = self._debt_monthly_rate(debt)
+        installment = self._debt_installment(financed, monthly_rate, term)
+        payment_base = self._debt_payment_base(debt, installment)
+        insurance = self._to_finite_float(debt.get("insurance", 0))
+        other_charges = self._to_finite_float(debt.get("other_charges", 0))
+        return self._debt_amount(payment_base + insurance + other_charges)
+
+    def _allocate_shared_debt_payment(
+        self, debt: dict, shared: list, period: int, amount: float
+    ) -> float:
+        """allocateSharedDebtPayment: split one cash flow row across its debts.
+
+        Two debts can hang off the same movement. What each one gets is its
+        share of the expected payment, not half each.
+        """
+        if len(shared) <= 1:
+            return self._debt_amount(amount)
+
+        weights = [(candidate, self._debt_expected_payment(candidate, period)) for candidate in shared]
+        debt_id = str(debt.get("id", ""))
+        current = next((weight for candidate, weight in weights if str(candidate.get("id", "")) == debt_id), 0.0)
+        if current <= 0:
+            return 0.0
+
+        total = sum(weight for _, weight in weights)
+        if total <= 0:
+            return self._debt_amount(amount / len(shared))
+        return self._debt_amount(amount * (current / total))
+
+    def _debt_linked_payments(self, debt: dict, debts: list, year: str) -> list:
+        """buildDebtLinkedPayments: the cash flow rows that pay this debt.
+
+        Only the months of the selected year are read, the same window the
+        original walks, so what the table shows and what it charges agree.
+        """
+        link = debt.get("cash_flow_link")
+        if not isinstance(link, dict) or not year:
+            return []
+
+        shared = [
+            candidate
+            for candidate in debts
+            if isinstance(candidate, dict) and self._same_debt_link(candidate.get("cash_flow_link"), link)
+        ]
+        debt_id = str(debt.get("id", "")).strip()
+        cash_flow_root = self._dataset_relative(self._cash_flow_root)
+
+        pre_schedule = []
+        by_period: dict[int, dict] = {}
+
+        for month_index, folder in enumerate(MONTH_FOLDERS):
+            entries = self._read_month_entries(cash_flow_root, year, folder)
+            linked = [entry for entry in entries if self._entry_links_debt(entry, link, debt_id)]
+            if not linked:
+                continue
+
+            regular = [entry for entry in linked if not self._entry_is_abono(entry)]
+            abonos = [entry for entry in linked if self._entry_is_abono(entry)]
+            period = self._debt_cash_flow_period(link, month_index, year)
+
+            abono_amount = sum(self._to_finite_float(entry.get("amount_cop", 0)) for entry in abonos)
+
+            # Paid before the plan started: it comes straight off the capital.
+            if period <= 0:
+                if not abonos:
+                    continue
+                allocated = self._allocate_shared_debt_payment(debt, shared, 1, abono_amount)
+                if allocated <= 0:
+                    continue
+                pre_schedule.append({
+                    "period": 0,
+                    "pre_schedule": True,
+                    "amount_cop": 0.0,
+                    "abono_amount_cop": allocated,
+                    "paid": any(self._entry_is_paid(entry) for entry in abonos),
+                    "month_index": month_index,
+                    "year": year,
+                })
+                continue
+
+            regular_amount = sum(self._to_finite_float(entry.get("amount_cop", 0)) for entry in regular)
+            allocated_regular = self._allocate_shared_debt_payment(debt, shared, period, regular_amount)
+            allocated_abono = self._allocate_shared_debt_payment(debt, shared, period, abono_amount)
+            if allocated_regular <= 0 and allocated_abono <= 0:
+                continue
+
+            by_period[period] = {
+                "period": period,
+                "pre_schedule": False,
+                "amount_cop": allocated_regular,
+                "abono_amount_cop": allocated_abono,
+                "paid": any(self._entry_is_paid(entry) for entry in regular + abonos),
+                "month_index": month_index,
+                "year": year,
+            }
+
+        return pre_schedule + list(by_period.values())
+
+    @staticmethod
+    def _debt_link_start(debt: dict) -> tuple[int | None, int]:
+        link = debt.get("cash_flow_link")
+        if not isinstance(link, dict):
+            return None, -1
+        try:
+            year = int(str(link.get("start_year", "")).strip())
+        except ValueError:
+            return None, -1
+        folder = str(link.get("start_month", "")).strip().lower()
+        return year, MONTH_FOLDERS.index(folder) if folder in MONTH_FOLDERS else -1
+
     def _handle_reorder_debt(self) -> None:
         """Move a debt next to another one.
 
@@ -750,6 +1735,58 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             {"ok": True, **report},
         )
 
+    # --- Debt math -------------------------------------------------------
+    #
+    # This is the single implementation. The dashboard used to repeat it in
+    # JavaScript with a different convention, so the installment it showed and
+    # the one written into the cash flow disagreed. Everything below mirrors
+    # what app.js did, since that is the version that matched the real bank
+    # statements.
+
+    @staticmethod
+    def _debt_annual_rate(debt: dict) -> float:
+        raw = str(debt.get("annual_interest_rate", "0") or "0").replace(",", ".").strip()
+        try:
+            rate = float(raw) if raw else 0.0
+        except ValueError:
+            return 0.0
+        return min(max(rate, 0.0), 200.0)
+
+    @classmethod
+    def _debt_monthly_rate(cls, debt: dict) -> float:
+        """The EFFECTIVE monthly equivalent, (1 + annual) ** (1/12) - 1.
+
+        Colombian banks quote the annual rate as "efectivo anual", so dividing
+        it by twelve overstates the installment.
+        """
+        annual = cls._debt_annual_rate(debt) / 100
+        return (1 + annual) ** (1 / 12) - 1 if annual > 0 else 0.0
+
+    @classmethod
+    def _debt_daily_interest(cls, balance: float, debt: dict, days: float) -> float:
+        annual = cls._debt_annual_rate(debt) / 100
+        if balance <= 0 or annual <= 0 or days <= 0:
+            return 0.0
+        return balance * ((1 + annual) ** (days / 365) - 1)
+
+    def _debt_payment_base(self, debt: dict, fallback_installment: float) -> float:
+        """What the bank actually charges before insurance and other charges.
+
+        When the debt carries its statement, that is the truth; the theoretical
+        installment is only a fallback for debts that do not track one.
+        """
+        principal = self._to_finite_float(debt.get("statement_principal", 0))
+        balance = self._to_finite_float(debt.get("statement_balance", 0))
+        days = self._to_finite_float(debt.get("statement_interest_days", 0))
+
+        if principal > 0 and balance > 0 and days > 0:
+            return principal + self._debt_daily_interest(balance, debt, days)
+
+        if debt.get("statement_payment") is not None:
+            return self._to_finite_float(debt.get("statement_payment"))
+
+        return fallback_installment
+
     def _compute_debt_monthly_payment(self, debt: dict) -> float:
         capital = self._to_finite_float(debt.get("capital", 0))
         initial_investment = self._to_finite_float(debt.get("initial_investment", 0))
@@ -762,13 +1799,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         except ValueError:
             return 0.0
 
-        rate_str = str(debt.get("annual_interest_rate", "0") or "0").replace(",", ".").strip()
-        try:
-            annual_rate = float(rate_str) if rate_str else 0.0
-        except ValueError:
-            annual_rate = 0.0
-
-        monthly_rate = annual_rate / 100 / 12
+        monthly_rate = self._debt_monthly_rate(debt)
         if monthly_rate > 0:
             compound = (1 + monthly_rate) ** term
             installment = financed * monthly_rate * compound / (compound - 1)
@@ -777,7 +1808,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
 
         insurance = self._to_finite_float(debt.get("insurance", 0))
         other_charges = self._to_finite_float(debt.get("other_charges", 0))
-        return installment + insurance + other_charges
+        return self._debt_payment_base(debt, installment) + insurance + other_charges
 
     def _collect_debt_abonos(self) -> dict:
         """Scan cash flow files for manual abono entries (extra_payment or category=abono)
@@ -846,12 +1877,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             return []
         if term <= 0:
             return []
-        rate_str = str(debt.get("annual_interest_rate", "0") or "0").replace(",", ".").strip()
-        try:
-            annual_rate = float(rate_str) if rate_str else 0.0
-        except ValueError:
-            annual_rate = 0.0
-        monthly_rate = annual_rate / 100 / 12
+        monthly_rate = self._debt_monthly_rate(debt)
         insurance = self._to_finite_float(debt.get("insurance", 0))
         other_charges = self._to_finite_float(debt.get("other_charges", 0))
         strategy = (
@@ -895,7 +1921,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                 installment = installment_base / term
         else:
             installment = installment_base / term if term > 0 else 0.0
-        actual_payment = installment + insurance + other_charges
+        actual_payment = self._debt_payment_base(debt, installment) + insurance + other_charges
 
         schedule: list = []
         balance = initial_balance
@@ -1125,6 +2151,22 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             },
         )
 
+    @staticmethod
+    def _content_hash(data: bytes) -> str:
+        """FNV-1a over the file bytes, mirrored in both clients.
+
+        The nutrition save writes the whole document, so a browser tab holding
+        yesterday's plan can silently resurrect it over today's edits — it
+        happened, three times. Each client hashes the bytes it loaded and sends
+        that as its base; a save whose base is not the current file is refused
+        instead of applied.
+        """
+        value = 0x811C9DC5
+        for byte in data:
+            value ^= byte
+            value = (value * 0x01000193) & 0xFFFFFFFF
+        return f"{value:08x}"
+
     def _handle_save_nutrition(self) -> None:
         payload = self._read_json_body()
         relative_path = payload.get("path", f"{DATA_URL_PREFIX}/nutrition/plan.json")
@@ -1141,8 +2183,28 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             raise ValueError("Invalid nutrition document: 'week' must be a list")
 
         target_path = self._resolve_data_path(relative_path)
+
+        # No base_hash means a client from before the guard: let it through,
+        # or the page could not save at all until reloaded.
+        base_hash = payload.get("base_hash")
+        if base_hash is not None and target_path.exists():
+            current_hash = self._content_hash(target_path.read_bytes())
+            if str(base_hash) != current_hash:
+                self._send_json(
+                    HTTPStatus.CONFLICT,
+                    {"ok": False, "error": "conflict", "hash": current_hash},
+                )
+                return
+
         self._write_document(target_path, document)
-        self._send_json(HTTPStatus.OK, {"ok": True, "path": relative_path})
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "ok": True,
+                "path": relative_path,
+                "hash": self._content_hash(target_path.read_bytes()),
+            },
+        )
 
     def _read_json_body(self) -> dict:
         content_length = int(self.headers.get("Content-Length", "0"))
@@ -1344,6 +2406,38 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             normalized["amount_cop"] = self._to_finite_float(updates["amount_cop"])
 
         return normalized
+
+    def _sync_income_amounts(self, source: dict, updates: dict, sync_from: str) -> dict:
+        """syncMonthlyIncomeRowAmounts, moved off the two clients.
+
+        The three amounts of an income are one number in three shapes. Editing
+        the pesos recomputes the dollars; editing the dollars or the rate
+        recomputes the pesos. Doing it here is what keeps both apps from
+        rounding the same row differently.
+        """
+        if sync_from not in ("amount_usd", "usd_cop", "amount_cop"):
+            return updates
+
+        merged = {
+            field: self._to_finite_float(
+                updates[field] if field in updates else source.get(field, 0)
+            )
+            for field in ("amount_usd", "usd_cop", "amount_cop")
+        }
+        rate = merged["usd_cop"]
+        if rate <= 0:
+            return updates
+
+        # roundIncomeDisplayValue: two decimals, rounded half up like the browser.
+        def round_two(value: float) -> float:
+            return math.floor(value * 100 + 0.5) / 100
+
+        if sync_from == "amount_cop":
+            merged["amount_usd"] = round_two(merged["amount_cop"] / rate)
+        else:
+            merged["amount_cop"] = round_two(merged["amount_usd"] * rate)
+
+        return {**updates, **merged}
 
     def _normalize_debt_updates(self, updates: dict) -> dict:
         allowed_fields = {
