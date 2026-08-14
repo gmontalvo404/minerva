@@ -1,0 +1,46 @@
+.list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.row {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.label {
+  font-weight: 700;
+}
+
+.value {
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--category-bar-start), var(--category-bar-end));
+}
+
+.positive .fill {
+  background: linear-gradient(90deg, var(--positive-bar-start), var(--positive-bar-end));
+}
+
+.negative .fill {
+  background: linear-gradient(90deg, var(--negative-bar-start), var(--negative-bar-end));
+}

@@ -54,6 +54,9 @@ DEMO_DATA_ROOT = (ROOT / DEMO_URL_PREFIX).resolve()
 
 # A year folder inside cash_flow: "2026", "demo", "2027-draft".
 YEAR_KEY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$", re.IGNORECASE)
+
+# The sections the React app answers for in the address bar.
+REACT_SECTION_PATHS = frozenset({"cashflow", "debts", "credit", "nutrition"})
 ALLOWED_TYPES = {"needs", "wants", "savings", "debts"}
 # TYPE_ORDER / TYPE_DISPLAY_ORDER in app.js: savings leads the display order.
 TYPE_ORDER = ("needs", "wants", "savings", "debts")
@@ -121,6 +124,14 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
     def translate_path(self, path: str) -> str:
         """Serve finance/data/... from the live data root, wherever it is."""
         cleaned = unquote(urlparse(path).path).strip("/")
+
+        # The React app routes in the browser: /debts is a section, not a file.
+        # Without this, reloading on one of them looks for a file that is not
+        # there. Its own assets are served from the build next to it.
+        react = self._react_build_path(cleaned)
+        if react is not None:
+            return react
+
         if cleaned != DATA_URL_PREFIX and not cleaned.startswith(f"{DATA_URL_PREFIX}/"):
             return super().translate_path(path)
 
@@ -129,6 +140,22 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         if candidate != FINANCE_DATA_ROOT and FINANCE_DATA_ROOT not in candidate.parents:
             return str(FINANCE_DATA_ROOT)  # a '..' tried to climb out
         return str(candidate)
+
+    @staticmethod
+    def _react_build_path(cleaned: str) -> str | None:
+        """Where a React route or one of its assets lives, if the build exists."""
+        build = Path(__file__).resolve().parent / "web" / "dist"
+        index = build / "index.html"
+        if not index.exists():
+            return None
+
+        if cleaned in REACT_SECTION_PATHS:
+            return str(index)
+        if cleaned.startswith("assets/"):
+            candidate = (build / cleaned).resolve()
+            if build in candidate.parents:
+                return str(candidate)
+        return None
 
     def handle(self) -> None:
         try:
