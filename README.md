@@ -77,6 +77,8 @@ Main files:
 - `finance/app/shared`: shared category, type, and currency catalogs.
 - `finance/app/demo`: the sample dataset behind the Demo switch.
 - `finance/data`: your own data — cash flow by year, debts, and the meal plan.
+  Since 2026-08 it is a symlink into iCloud Drive (`Minerva/data`), so the
+  files are backed up, versioned, and readable by the iOS app anywhere.
   It is ignored by git and can live anywhere (see below).
 
 ## Requirements

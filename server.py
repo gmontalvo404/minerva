@@ -4,6 +4,7 @@ import json
 import math
 import os
 import re
+import socket
 import subprocess
 import sys
 import threading
@@ -41,7 +42,10 @@ def _data_root_from_env(default: Path) -> tuple[Path, str]:
     return candidate.resolve(), ""
 
 
-HOST = "localhost"
+# localhost unless asked: MINERVA_HOST=0.0.0.0 opens the server to the local
+# network — the iOS app needs that — and there is no authentication, so only
+# on a Wi-Fi you trust.
+HOST = os.environ.get("MINERVA_HOST", "").strip() or "localhost"
 PORT = _port_from_env()
 ROOT = Path(__file__).resolve().parent
 
@@ -76,6 +80,9 @@ LIVE_RELOAD_WATCH_PATHS = (
     ROOT / "legacy" / "styles.css",
     ROOT / "server.py",
 )
+
+# One export at a time: several request threads can be saving at once.
+MOBILE_SNAPSHOT_LOCK = threading.Lock()
 
 
 def resolve_dataset_path(relative_path: str) -> tuple[Path, Path]:
@@ -194,6 +201,10 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                 self._handle_get_usd_cop_rate()
             except Exception as error:  # noqa: BLE001
                 self._send_json(HTTPStatus.BAD_GATEWAY, {"ok": False, "error": str(error)})
+            return
+        if parsed_path.path == "/api/mobile/export":
+            self._export_mobile_snapshot()
+            self._send_json(HTTPStatus.OK, {"ok": True})
             return
         if parsed_path.path == "/api/dashboard":
             try:
@@ -1074,12 +1085,16 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
     def _handle_get_dashboard(self, query: dict) -> None:
         """A year of cash flow, already aggregated: months, totals and categories."""
         cash_flow_root = (query.get("path") or [f"{DATA_URL_PREFIX}/cash_flow"])[0].strip("/")
+        year = (query.get("year") or [""])[0].strip()
+        self._send_json(HTTPStatus.OK, self._build_dashboard(cash_flow_root, year))
+
+    def _build_dashboard(self, cash_flow_root: str, year: str = "") -> dict:
+        """The dashboard payload — what /api/dashboard answers and the phone reads."""
         years = self._discover_years(cash_flow_root)
-        year = (query.get("year") or [""])[0].strip() or (years[0] if years else "")
+        year = year or (years[0] if years else "")
 
         if not year:
-            self._send_json(HTTPStatus.OK, {"ok": True, "years": [], "year": "", "months": [], "annual": None})
-            return
+            return {"ok": True, "years": [], "year": "", "months": [], "annual": None}
 
         try:
             incomes_path = self._resolve_data_path(f"{cash_flow_root}/{year}/incomes/incomes.json")
@@ -1158,10 +1173,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             ),
         }
 
-        self._send_json(
-            HTTPStatus.OK,
-            {"ok": True, "years": years, "year": year, "months": months, "annual": annual},
-        )
+        return {"ok": True, "years": years, "year": year, "months": months, "annual": annual}
 
     @staticmethod
     def _ingredient_labels(ingredient: dict) -> list[str]:
@@ -2877,6 +2889,48 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             json.dumps(document, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
+        # Any change to the live data refreshes what the phone reads.
+        try:
+            live = FINANCE_DATA_ROOT in path.resolve().parents
+        except OSError:
+            live = False
+        if live:
+            self._export_mobile_snapshot()
+
+    def _snapshot_dataset(self, cash_flow_root: str) -> dict:
+        """Every year of one dataset, precomputed."""
+        years = self._discover_years(cash_flow_root)
+        return {
+            "years": years,
+            "dashboards": {year: self._build_dashboard(cash_flow_root, year) for year in years},
+        }
+
+    def _export_mobile_snapshot(self) -> None:
+        """mobile/dashboard.json: every year precomputed, for the iOS app.
+
+        The phone reads this file straight from iCloud and does no math of its
+        own — the single-brain rule, minus the HTTP. A failed export must
+        never break the save that triggered it.
+        """
+        try:
+            live = self._snapshot_dataset(f"{DATA_URL_PREFIX}/cash_flow")
+            snapshot = {
+                "generated_at": utc_now_iso(),
+                # Live stays flat at the top: the app already installed reads
+                # it there. The demo rides along for showing the app around
+                # without showing the finances.
+                "years": live["years"],
+                "dashboards": live["dashboards"],
+                "demo": self._snapshot_dataset(f"{DEMO_URL_PREFIX}/cash_flow"),
+            }
+            target = FINANCE_DATA_ROOT / "mobile" / "dashboard.json"
+            with MOBILE_SNAPSHOT_LOCK:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                scratch = target.with_name("dashboard.json.tmp")
+                scratch.write_text(json.dumps(snapshot, ensure_ascii=False) + "\n", encoding="utf-8")
+                scratch.replace(target)  # atomic: iCloud never syncs it a medias
+        except Exception as error:  # noqa: BLE001
+            print(f"No pude exportar el snapshot móvil: {error}", file=sys.stderr)
 
     def _send_json(self, status: HTTPStatus, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -3038,14 +3092,56 @@ def watch_parent() -> None:
     threading.Thread(target=watch, daemon=True).start()
 
 
+def lan_address() -> str:
+    """The Mac's address on the local network, for the phone to type in."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("192.0.2.1", 1))  # TEST-NET: nothing is sent
+            return probe.getsockname()[0]
+    except OSError:
+        return ""
+
+
+def nudge_icloud_data() -> None:
+    """Ask iCloud to materialize the data if macOS evicted it to placeholders."""
+    if sys.platform != "darwin" or "Mobile Documents" not in str(FINANCE_DATA_ROOT):
+        return
+    try:
+        subprocess.run(
+            ["brctl", "download", str(FINANCE_DATA_ROOT)],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def request_startup_export(host: str) -> None:
+    """Refresh the phone's snapshot on boot, once the server answers requests."""
+    time.sleep(0.8)
+    try:
+        urlopen(Request(f"http://{host}:{PORT}/api/mobile/export"), timeout=15).read()
+    except OSError:
+        pass
+
+
 def main() -> None:
     server = ThreadingHTTPServer((HOST, PORT), FinanceDataHandler)
-    print(f"Serving {ROOT} at http://{HOST}:{PORT}")
+    browse_host = "localhost" if HOST in {"0.0.0.0", "::"} else HOST
+    print(f"Serving {ROOT} at http://{browse_host}:{PORT}")
     print(f"Data from {FINANCE_DATA_ROOT}")
+    if HOST in {"0.0.0.0", "::"}:
+        lan = lan_address()
+        if lan:
+            print(f"En tu red local: http://{lan}:{PORT}  (la dirección para el iPhone)")
     if DATA_ROOT_WARNING:
         print(DATA_ROOT_WARNING, file=sys.stderr)
     watch_parent()
-    open_in_browser(f"http://{HOST}:{PORT}")
+    nudge_icloud_data()
+    threading.Thread(target=request_startup_export, args=(browse_host,), daemon=True).start()
+    open_in_browser(f"http://{browse_host}:{PORT}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
