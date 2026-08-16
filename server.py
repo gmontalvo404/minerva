@@ -179,7 +179,16 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             self.send_header("Expires", "0")
         super().end_headers()
 
+    def do_HEAD(self) -> None:
+        if not self._host_is_allowed():
+            self._send_json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "Host desconocido"})
+            return
+        super().do_HEAD()
+
     def do_GET(self) -> None:
+        if not self._host_is_allowed():
+            self._send_json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "Host desconocido"})
+            return
         parsed_path = urlparse(self.path)
         # The old app lives under legacy/ now; its old address keeps working,
         # and a React section asked for before `web/dist` is built falls back
@@ -191,6 +200,9 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         ):
             self.send_response(HTTPStatus.FOUND)
             self.send_header("Location", "/legacy/")
+            # HTTP/1.1 con keep-alive: sin esto, el cliente espera un cuerpo
+            # que nunca llega (los navegadores lo toleran; curl se queda).
+            self.send_header("Content-Length", "0")
             self.end_headers()
             return
         if parsed_path.path == "/api/dev/live-reload":
@@ -291,6 +303,13 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         return Path(path).suffix in DEV_STATIC_CACHE_EXTENSIONS
 
     def do_POST(self) -> None:
+        if not self._host_is_allowed():
+            self._send_json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "Host desconocido"})
+            return
+        guard = self._write_guard_error()
+        if guard is not None:
+            self._send_json(guard[0], {"ok": False, "error": guard[1]})
+            return
         try:
             if self.path == "/api/entries/active":
                 self._handle_update_active()
@@ -2932,6 +2951,24 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         except Exception as error:  # noqa: BLE001
             print(f"No pude exportar el snapshot móvil: {error}", file=sys.stderr)
 
+    def _host_is_allowed(self) -> bool:
+        """El Host contra la lista local: una página externa cuyo dominio
+        apunte a 127.0.0.1 (DNS rebinding) llega con su Host ajeno y se va."""
+        return (self.headers.get("Host") or "").strip().lower() in ALLOWED_HOSTS
+
+    def _write_guard_error(self) -> tuple[HTTPStatus, str] | None:
+        """CSRF: los navegadores declaran Origin en todo POST; uno ajeno (o
+        "null", el de los iframes sandbox) se rechaza. Las herramientas sin
+        navegador no lo mandan y pasan. El Content-Type JSON obliga a una
+        página hostil al preflight CORS que este servidor nunca concede."""
+        origin = (self.headers.get("Origin") or "").strip().lower()
+        if origin and origin not in ALLOWED_ORIGINS:
+            return HTTPStatus.FORBIDDEN, "Origen no permitido"
+        content_type = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if content_type != "application/json":
+            return HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "Se requiere Content-Type: application/json"
+        return None
+
     def _send_json(self, status: HTTPStatus, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -3100,6 +3137,29 @@ def lan_address() -> str:
             return probe.getsockname()[0]
     except OSError:
         return ""
+
+
+# Las defensas del caso "una web abierta en tu navegador le pega a localhost":
+# el Host verificado mata el DNS rebinding, y Origin + Content-Type matan el
+# CSRF de escritura. Sin tokens ni sesiones: este servidor no tiene cuentas.
+def _build_allowed_hosts() -> frozenset[str]:
+    hosts = {f"localhost:{PORT}", f"127.0.0.1:{PORT}", f"[::1]:{PORT}"}
+    if HOST in {"0.0.0.0", "::"}:
+        lan = lan_address()
+        if lan:
+            hosts.add(f"{lan}:{PORT}")
+    elif HOST not in {"localhost", "127.0.0.1", "::1"}:
+        hosts.add(f"{HOST.lower()}:{PORT}")
+    return frozenset(hosts)
+
+
+ALLOWED_HOSTS = _build_allowed_hosts()
+# Vite (5173) proxya /api hacia acá con changeOrigin, pero el Origin del
+# navegador llega intacto: el dev server es un origen local legítimo.
+ALLOWED_ORIGINS = frozenset(
+    {f"http://{host}" for host in ALLOWED_HOSTS}
+    | {"http://localhost:5173", "http://127.0.0.1:5173"}
+)
 
 
 def nudge_icloud_data() -> None:

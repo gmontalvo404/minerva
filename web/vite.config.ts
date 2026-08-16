@@ -10,8 +10,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": BACKEND,
-      "/finance": BACKEND,
+      // changeOrigin: the Python server validates the Host header against its
+      // own address; without this the proxy would forward "localhost:5173".
+      "/api": { target: BACKEND, changeOrigin: true },
+      "/finance": { target: BACKEND, changeOrigin: true },
     },
   },
   build: {
