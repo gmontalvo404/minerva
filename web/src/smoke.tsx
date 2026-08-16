@@ -298,8 +298,8 @@ check("clases del marcado original", missing.length === 0, missing.length ? `fal
 // carry no style even in the original — what matters is that we invent none.
 const original =
   readFileSync("./src/ui/legacy.css", "utf8") +
-  readFileSync("../app.js", "utf8") +
-  readFileSync("../index.html", "utf8");
+  readFileSync("../legacy/app.js", "utf8") +
+  readFileSync("../legacy/index.html", "utf8");
 const invented = [...expected, ...annualTableClasses, ...monthlyClasses].filter((cls) => !original.includes(cls));
 check(
   "ninguna clase inventada",
@@ -511,7 +511,7 @@ check(
  * key: losing one means the reader comes back to a tab they did not choose.
  */
 const NOT_PORTED_YET = ['"cashflow-dashboard-live-usd-cop-rate"'];
-const originalKeys = [...new Set(readFileSync("../app.js", "utf8").match(/"cashflow-dashboard-[a-z-]+"/g) ?? [])];
+const originalKeys = [...new Set(readFileSync("../legacy/app.js", "utf8").match(/"cashflow-dashboard-[a-z-]+"/g) ?? [])];
 const portKeys = readFileSync("./src/lib/storage.ts", "utf8");
 const dropped = originalKeys.filter((key) => !portKeys.includes(key) && !NOT_PORTED_YET.includes(key));
 check(
@@ -524,7 +524,7 @@ check(
  * legacy.css is a verbatim copy of the original stylesheet. If the two drift,
  * the React app quietly stops looking like the app it is replacing.
  */
-const sourceSheet = readFileSync("../styles.css", "utf8");
+const sourceSheet = readFileSync("../legacy/styles.css", "utf8");
 const copiedSheet = readFileSync("./src/ui/legacy.css", "utf8");
 check(
   "legacy.css sigue siendo copia fiel de styles.css",

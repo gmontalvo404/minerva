@@ -40,9 +40,11 @@ Dark mode with demo data:
 
 ```text
 .
-+-- index.html
-+-- styles.css
-+-- app.js
++-- legacy
+|   +-- index.html
+|   +-- styles.css
+|   `-- app.js
++-- web
 +-- server.py
 +-- desktop
 `-- finance
@@ -66,10 +68,11 @@ Dark mode with demo data:
 
 Main files:
 
-- `index.html`: interface markup.
-- `styles.css`: styling, responsive layout, and themes.
-- `app.js`: data loading, calculations, rendering, interactions, and backend calls.
-- `server.py`: local server, write endpoints, and USD/COP rate proxy.
+- `legacy/index.html`: interface markup.
+- `legacy/styles.css`: styling, responsive layout, and themes.
+- `legacy/app.js`: data loading, rendering, interactions, and backend calls.
+- `web`: the React rewrite, served on the same port when built.
+- `server.py`: local server, the money math, write endpoints, and USD/COP rate proxy.
 - `desktop`: macOS launcher app to start and stop the server without a terminal.
 - `finance/app/shared`: shared category, type, and currency catalogs.
 - `finance/app/demo`: the sample dataset behind the Demo switch.
@@ -126,7 +129,7 @@ changes it:
 MINERVA_PORT=8125 python3 server.py
 ```
 
-You can also open `index.html` directly, but the app needs to be served over HTTP to load JSON with `fetch` and to save changes through the local endpoints.
+The old app answers at `/legacy/`, and `/` redirects there. Opening `legacy/index.html` straight from disk does not work: the app needs to be served over HTTP to load JSON with `fetch` and to save changes through the local endpoints.
 
 ## Data
 

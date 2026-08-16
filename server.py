@@ -70,9 +70,9 @@ COINBASE_USD_RATE_ENDPOINT = "https://api.coinbase.com/v2/exchange-rates?currenc
 DEV_STATIC_CACHE_EXTENSIONS = {".css", ".html", ".js"}
 LIVE_RELOAD_POLL_SECONDS = 0.5
 LIVE_RELOAD_WATCH_PATHS = (
-    ROOT / "index.html",
-    ROOT / "app.js",
-    ROOT / "styles.css",
+    ROOT / "legacy" / "index.html",
+    ROOT / "legacy" / "app.js",
+    ROOT / "legacy" / "styles.css",
     ROOT / "server.py",
 )
 
@@ -173,6 +173,18 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed_path = urlparse(self.path)
+        # The old app lives under legacy/ now; its old address keeps working,
+        # and a React section asked for before `web/dist` is built falls back
+        # there too. 302, not 308: where these point will keep changing.
+        section = parsed_path.path.strip("/")
+        if (
+            parsed_path.path in {"/", "/index.html"}
+            or (section in REACT_SECTION_PATHS and self._react_build_path(section) is None)
+        ):
+            self.send_response(HTTPStatus.FOUND)
+            self.send_header("Location", "/legacy/")
+            self.end_headers()
+            return
         if parsed_path.path == "/api/dev/live-reload":
             self._handle_live_reload()
             return

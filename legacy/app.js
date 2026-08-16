@@ -18,11 +18,12 @@ const LIVE_RELOAD_ENDPOINT = "/api/dev/live-reload";
 const DATASET_STORAGE_KEY = "cashflow-dashboard-dataset";
 const DEFAULT_DATASET = "live";
 const AVAILABLE_DATASETS = new Set(["live", "demo"]);
+// Root-absolute: the page now lives under /legacy/, the data does not.
 const DATASET_ROOTS = {
-  live: "finance/data",
-  demo: "finance/app/demo",
+  live: "/finance/data",
+  demo: "/finance/app/demo",
 };
-const SHARED_DATA_ROOT = "finance/app/shared";
+const SHARED_DATA_ROOT = "/finance/app/shared";
 const DEFAULT_LANGUAGE = "en";
 
 function normalizeDataset(value) {
