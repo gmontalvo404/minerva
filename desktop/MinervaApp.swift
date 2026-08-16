@@ -85,6 +85,88 @@ enum Browsers {
     }
 }
 
+/// Reuse the Minerva tab the browser already shows instead of piling up a new
+/// one per open. Safari and the Chromium family expose their tabs to
+/// AppleScript; Firefox exposes nothing, so there a fresh tab keeps opening.
+enum TabReuse {
+    static func script(for bundleID: String) -> String? {
+        if bundleID == "com.apple.Safari" {
+            return safari
+        }
+        if chromiumFamily.contains(bundleID) {
+            // A literal bundle id, so osascript can load that browser's own
+            // dictionary when it compiles; a runtime value cannot do that.
+            return chromium.replacingOccurrences(of: "BUNDLE_ID", with: bundleID)
+        }
+        return nil
+    }
+
+    private static let chromiumFamily: Set<String> = [
+        "com.google.Chrome", "com.brave.Browser", "com.microsoft.edgemac",
+        "com.vivaldi.Vivaldi", "com.operasoftware.Opera", "company.thebrowser.Browser",
+    ]
+
+    /// argv: target URL, then the prefixes that mark a tab as Minerva's.
+    private static let safari = """
+    on run argv
+      set targetURL to item 1 of argv
+      tell application "Safari"
+        repeat with w in windows
+          try
+            repeat with t in tabs of w
+              set tabURL to ""
+              try
+                set tabURL to (URL of t) as text
+              end try
+              repeat with i from 2 to count of argv
+                if tabURL starts with (item i of argv) then
+                  set URL of t to targetURL
+                  set current tab of w to t
+                  set index of w to 1
+                  activate
+                  return "reused"
+                end if
+              end repeat
+            end repeat
+          end try
+        end repeat
+      end tell
+      return "none"
+    end run
+    """
+
+    /// argv: target URL, then the prefixes. BUNDLE_ID gets substituted in.
+    private static let chromium = """
+    on run argv
+      set targetURL to item 1 of argv
+      tell application id "BUNDLE_ID"
+        repeat with w in windows
+          try
+            set tabIndex to 0
+            repeat with t in tabs of w
+              set tabIndex to tabIndex + 1
+              set tabURL to ""
+              try
+                set tabURL to (URL of t) as text
+              end try
+              repeat with i from 2 to count of argv
+                if tabURL starts with (item i of argv) then
+                  set URL of t to targetURL
+                  set active tab index of w to tabIndex
+                  set index of w to 1
+                  activate
+                  return "reused"
+                end if
+              end repeat
+            end repeat
+          end try
+        end repeat
+      end tell
+      return "none"
+    end run
+    """
+}
+
 // MARK: - Shell helpers
 
 @discardableResult
@@ -123,19 +205,37 @@ func findPython() -> String? {
     return nil
 }
 
+/// Whether something answers on localhost's TCP `port`. Both stacks get
+/// probed: the Python server binds 127.0.0.1, but Vite binds only ::1.
 func isPortListening(_ port: UInt16) -> Bool {
-    let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+    isPortListening(port, family: AF_INET) || isPortListening(port, family: AF_INET6)
+}
+
+private func isPortListening(_ port: UInt16, family: Int32) -> Bool {
+    let descriptor = socket(family, SOCK_STREAM, 0)
     guard descriptor >= 0 else { return false }
     defer { close(descriptor) }
 
-    var address = sockaddr_in()
-    address.sin_family = sa_family_t(AF_INET)
-    address.sin_port = port.bigEndian
-    address.sin_addr.s_addr = inet_addr("127.0.0.1")
-
-    let connected = withUnsafePointer(to: &address) { pointer in
-        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
-            connect(descriptor, socketAddress, socklen_t(MemoryLayout<sockaddr_in>.size))
+    let connected: Int32
+    if family == AF_INET6 {
+        var address = sockaddr_in6()
+        address.sin6_family = sa_family_t(AF_INET6)
+        address.sin6_port = port.bigEndian
+        address.sin6_addr = in6addr_loopback
+        connected = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
+                connect(descriptor, socketAddress, socklen_t(MemoryLayout<sockaddr_in6>.size))
+            }
+        }
+    } else {
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        connected = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
+                connect(descriptor, socketAddress, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
         }
     }
     return connected == 0
@@ -251,6 +351,8 @@ final class ServerModel: ObservableObject {
     private var timer: Timer?
     private var openWhenReady = false
     private var waitedForStart = 0
+    /// Encender is waiting for a dying server to release the port.
+    private var startPending = false
 
     /// What the running server actually bound and is reading, which stays put
     /// while the user edits the fields.
@@ -318,22 +420,22 @@ final class ServerModel: ObservableObject {
             let listening = isPortListening(currentPort)
             if state == .starting {
                 waitedForStart += 1
-                if listening {
-                    state = .running
-                    if openWhenReady {
-                        openWhenReady = false
-                        openInBrowser()
-                    }
-                } else if waitedForStart > 20 {  // ~30s without binding the port
+                if listening || waitedForStart > 20 {  // ~30s without binding the port
                     state = .running
                 }
             } else {
                 state = .running
             }
+            if listening && openWhenReady {
+                openWhenReady = false
+                openSoon()
+            }
             return
         }
 
-        // Nothing of ours is running: watch the port the field is pointing at.
+        // Nothing of ours is running: watch the port the field is pointing
+        // at. Unless Encender is holding for a dying server to free it.
+        if startPending { return }
         if isPortListening(configuredPort) {
             activePort = configuredPort
             state = .external
@@ -354,6 +456,7 @@ final class ServerModel: ObservableObject {
     }
 
     func start() {
+        guard process == nil, !startPending else { return }
         errorMessage = nil
 
         guard projectIsValid else {
@@ -366,10 +469,30 @@ final class ServerModel: ObservableObject {
         }
         let port = configuredPort
         guard !isPortListening(port) else {
-            errorMessage = "El puerto \(port) ya está ocupado. Apaga el otro servidor o usa otro puerto."
-            refresh()
+            // A server just Apagado takes a beat to let go of the port: hold
+            // Encender for it instead of failing on the spot.
+            startPending = true
+            state = .starting
+            Task { @MainActor in
+                for _ in 0..<25 where isPortListening(port) {  // ~2.5s
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+                startPending = false
+                if isPortListening(port) {
+                    state = .stopped
+                    errorMessage = "El puerto \(port) ya está ocupado. Apaga el otro servidor o usa otro puerto."
+                    refresh()
+                } else {
+                    launch(on: port)
+                }
+            }
             return
         }
+        launch(on: port)
+    }
+
+    /// The spawn itself, once the port is known to be free.
+    private func launch(on port: UInt16) {
         guard let python = findPython() else {
             errorMessage = "No encontré Python 3.10 o superior en este Mac."
             return
@@ -383,6 +506,7 @@ final class ServerModel: ObservableObject {
         var environment = ProcessInfo.processInfo.environment
         environment["MINERVA_BROWSER"] = "none"  // this app decides when and where
         environment["MINERVA_PORT"] = "\(port)"
+        environment["MINERVA_PARENT_PID"] = "\(ProcessInfo.processInfo.processIdentifier)"
         environment["PYTHONUNBUFFERED"] = "1"
         if !dataPath.isEmpty {
             environment["MINERVA_DATA_ROOT"] = dataPath
@@ -528,17 +652,73 @@ final class ServerModel: ObservableObject {
         viteProcess = nil
     }
 
-    func openInBrowser() {
-        // While both versions coexist, Abrir opens the two: the dashboard you
-        // use and the React rewrite. Uncheck "React" to stop that.
-        var targets = [url]
+    /// What Abrir opens: the React dev server when it is up, else the built
+    /// React app on the Python server. The old app is never the door — it
+    /// stays reachable at /legacy/ for whoever types it.
+    var openTarget: URL {
         if runReact && isPortListening(Config.reactPort) {
-            targets.append(Config.reactURL)
+            return Config.reactURL
         }
-        open(targets)
+        return url.appendingPathComponent("cashflow")
     }
 
+    /// Open on start, as soon as there is something worth opening. Vite binds
+    /// its port a beat after the Python server does; polling it fine-grained
+    /// keeps the first window instant without settling for the built copy.
+    private func openSoon() {
+        guard runReact, viteProcess != nil, !isPortListening(Config.reactPort) else {
+            openInBrowser()
+            return
+        }
+        Task { @MainActor [weak self] in
+            var attempts = 0
+            while attempts < 20, !isPortListening(Config.reactPort) {  // ~3s cap
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                attempts += 1
+            }
+            guard let self, self.isUp else { return }
+            self.openInBrowser()
+        }
+    }
+
+    func openInBrowser() {
+        open([openTarget])
+    }
+
+    /// The browser Abrir actually talks to: the chosen one, or whatever app
+    /// the system resolves as its default.
+    private var effectiveBrowserBundleID: String? {
+        if let bundleID = Browsers.named(browserID).bundleID { return bundleID }
+        guard let application = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "http://localhost")!) else {
+            return nil
+        }
+        return Bundle(url: application)?.bundleIdentifier
+    }
+
+    /// Point the browser's existing Minerva tab at `target` — any tab on the
+    /// dev server or the Python one counts. The first use asks for the
+    /// Automation permission once; denied, or on Firefox, a plain open runs.
     private func open(_ targets: [URL]) {
+        guard targets.count == 1, let target = targets.first,
+              let bundleID = effectiveBrowserBundleID,
+              let script = TabReuse.script(for: bundleID),
+              NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == bundleID })
+        else {
+            openFresh(targets)
+            return
+        }
+
+        let prefixes = ["\(Config.reactURL.absoluteString)/", "\(url.absoluteString)/"]
+        // osascript can sit on the Automation consent dialog for as long as
+        // the user thinks it over; off the main thread it freezes nothing.
+        Task.detached(priority: .userInitiated) {
+            let result = run("/usr/bin/osascript", ["-e", script, target.absoluteString] + prefixes)
+            if result.status == 0, result.output.contains("reused") { return }
+            await MainActor.run { [weak self] in self?.openFresh([target]) }
+        }
+    }
+
+    private func openFresh(_ targets: [URL]) {
         let browser = Browsers.named(browserID)
         let configuration = NSWorkspace.OpenConfiguration()
 
@@ -621,7 +801,7 @@ final class ServerModel: ObservableObject {
     var hiddenLogCount: Int { log.count - visibleLog.count }
 
     /// A request the server answered fine, e.g.
-    /// `127.0.0.1 - - [01/Aug/2026 21:40:02] "GET /app.js HTTP/1.1" 200 -`.
+    /// `127.0.0.1 - - [01/Aug/2026 21:40:02] "GET /legacy/app.js HTTP/1.1" 200 -`.
     /// Errors (404, 500…) are never hidden: those are worth reading.
     static func isServedRequest(_ line: String) -> Bool {
         guard line.contains("HTTP/1."), let quote = line.range(of: "\" ", options: .backwards) else {
@@ -794,7 +974,7 @@ struct ContentView: View {
                     Button {
                         model.openInBrowser()
                     } label: {
-                        Text(model.url.absoluteString)
+                        Text(model.openTarget.absoluteString)
                             .font(.callout)
                     }
                     .buttonStyle(.link)
@@ -873,7 +1053,7 @@ struct ContentView: View {
             }
             .controlSize(.large)
             .disabled(!model.isUp)
-            .help("Abre \(model.url.absoluteString) en el navegador elegido")
+            .help("Abre \(model.openTarget.absoluteString) en el navegador elegido")
 
             Spacer()
 

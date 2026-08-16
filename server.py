@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 from copy import deepcopy
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -3015,12 +3016,35 @@ def open_in_browser(url: str) -> None:
     webbrowser.open(url, new=2, autoraise=True)
 
 
+def watch_parent() -> None:
+    """Exit when the launcher that started us dies, however it died.
+
+    A force-quit of the desktop app cannot signal its children, and an
+    orphaned server keeps the port hostage until someone finds it by hand.
+    """
+    raw = os.environ.get("MINERVA_PARENT_PID", "")
+    if not raw.isdigit():
+        return
+    parent_pid = int(raw)
+
+    def watch() -> None:
+        while True:
+            time.sleep(2)
+            try:
+                os.kill(parent_pid, 0)  # signal 0: existence check only
+            except OSError:
+                os._exit(0)
+
+    threading.Thread(target=watch, daemon=True).start()
+
+
 def main() -> None:
     server = ThreadingHTTPServer((HOST, PORT), FinanceDataHandler)
     print(f"Serving {ROOT} at http://{HOST}:{PORT}")
     print(f"Data from {FINANCE_DATA_ROOT}")
     if DATA_ROOT_WARNING:
         print(DATA_ROOT_WARNING, file=sys.stderr)
+    watch_parent()
     open_in_browser(f"http://{HOST}:{PORT}")
     try:
         server.serve_forever()

@@ -56,13 +56,24 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key>         <string>1</string>
   <key>LSMinimumSystemVersion</key>  <string>13.0</string>
   <key>NSHighResolutionCapable</key> <true/>
+  <key>NSAppleEventsUsageDescription</key> <string>Minerva reutiliza la pestaña que el navegador ya tiene abierta en vez de abrir otra.</string>
   <key>MinervaProjectPath</key>      <string>$project</string>
 </dict>
 </plist>
 PLIST
 
-# 4. Ad-hoc signature: Apple Silicon refuses to launch unsigned binaries.
-codesign --force --sign - --timestamp=none "$app" >/dev/null 2>&1
+# 4. Signature. The local "Minerva Dev" identity when it exists: TCC keys the
+#    granted permissions (Documentos, Automatización) to the signing identity,
+#    and an ad-hoc signature is a brand-new identity on every build — macOS
+#    would forget the permissions each rebuild. Apple Silicon refuses to run
+#    unsigned binaries, so ad-hoc stays as the fallback.
+if security find-identity -p codesigning 2>/dev/null | grep -q "Minerva Dev" \
+   && codesign --force --sign "Minerva Dev" --timestamp=none "$app" >/dev/null 2>&1; then
+  echo "Firmada con la identidad estable: los permisos de macOS sobreviven al rebuild."
+else
+  codesign --force --sign - --timestamp=none "$app" >/dev/null 2>&1
+  echo "Aviso: firma ad-hoc (no hay identidad 'Minerva Dev'); macOS volverá a pedir permisos."
+fi
 
 # 5. Smoke test the fresh build before handing it over.
 echo

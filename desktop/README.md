@@ -3,17 +3,23 @@
 A small native macOS app to turn the local server on and off without a terminal,
 and to open the dashboard in the browser you choose.
 
-- Opening the app **turns the server on and opens the dashboard**, the same as
-  running `python3 server.py`. Uncheck **Encender al abrir** to stop that.
+- Opening the app **turns the server on and opens Minerva** — the React
+  version — in the browser you choose. Uncheck **Encender al abrir** to stop
+  that.
 - **Encender / Apagar**, with the server status and the URL.
 - **Recargar**: turns it off and on again, which is also how a new port takes
   effect.
 - **Abrir**: opens the dashboard in the chosen browser whenever you want.
-- **React** (temporary): while the React rewrite in `web/` lives next to the old
-  dashboard, the app also starts the Vite dev server and **Abrir** opens both
-  tabs — `localhost:8123` and `localhost:5173`. Uncheck it to go back to just
-  the old one. This whole checkbox goes away with the old dashboard.
-- **Navegador**: only the browsers actually installed on the Mac show up.
+- **React** (temporary): keeps the Vite dev server running next to the Python
+  one, and **Abrir** opens it — `localhost:5173`, live sources. Unchecked,
+  **Abrir** opens the built copy at `localhost:8123/cashflow` instead. The old
+  dashboard never opens on its own anymore; it still answers at `/legacy/` if
+  you type it. This checkbox goes away with the old dashboard.
+- **Navegador**: only the browsers actually installed on the Mac show up. In
+  Safari and the Chromium family (Chrome, Brave, Edge…), **Abrir** reuses the
+  Minerva tab already open — focuses it and points it at the app — instead of
+  stacking a new one; macOS asks for the Automation permission once. Firefox
+  cannot be scripted, so there a fresh tab still opens.
 - **Puerto**: anything from 1024 up; `server.py` reads it as `MINERVA_PORT`. It
   sits behind the **Editar puerto** checkbox, so a stray click never moves it.
 - **Datos**: which folder holds your own finance JSON (`cash_flow`, `debts`,
