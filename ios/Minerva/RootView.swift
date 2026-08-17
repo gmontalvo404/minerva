@@ -11,6 +11,8 @@ final class DashboardStore: ObservableObject {
     @Published var categories: [String] = []
     /// Las deudas activas, para el selector de abonos del editor.
     @Published var debts: [DebtOption] = []
+    /// El módulo de deudas completo; nil mientras el snapshot no llegue.
+    @Published var debtDetails: [DebtDetail]?
 
     /// El guardado del demo: el cambio entra directo al dashboard en
     /// memoria, con el mes y el anual re-agregados por DemoMath. Se pierde
@@ -75,8 +77,8 @@ private struct AnnualScreen: View {
 /// La portada: como el sidebar de la web — eliges el año y la vista (anual o
 /// un mes) en cuadritos, y la pantalla elegida se abre encima. Los datos
 /// llegan del snapshot que el servidor deja en iCloud; solo visualiza.
-/// Los módulos de la web. En iOS por ahora solo existe cash flow; los demás
-/// se muestran y avisan que aún viven en la web.
+/// Los módulos de la web. En iOS existen cash flow y deudas; los demás se
+/// muestran y avisan que aún viven en la web.
 enum Module: String, CaseIterable, Identifiable {
     case cashflow
     case debts
@@ -127,6 +129,8 @@ struct RootView: View {
     /// "<año>|<sello>" del archivo de año aplicado: si el manifiesto anuncia
     /// el mismo, ese año no se vuelve a decodificar.
     @State private var appliedYear: String?
+    /// El generated_at del snapshot de deudas aplicado — mismo truco.
+    @State private var appliedDebtsStamp: String?
     @State private var loading = false
     @State private var errorMessage: String?
     @State private var year: String?
@@ -148,9 +152,11 @@ struct RootView: View {
     /// A dónde se puede navegar: por valor, nunca por copia. El destino se
     /// arma contra el estado vigente en cada re-render, así los refrescos
     /// silenciosos también actualizan la pantalla que está abierta.
-    private enum Route: Hashable {
+    /// Interno (no private): DebtsView arma sus NavigationLink con esto.
+    enum Route: Hashable {
         case annual
         case month(Int)
+        case debt(String)
     }
 
     /// Cambia la carpeta o el año → recarga sola.
@@ -269,6 +275,9 @@ struct RootView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     selector(for: response)
+                    if module == .debts {
+                        DebtsHome(debts: store.debtDetails, live: dataset == .live, theme: theme)
+                    }
                     if dataset == .demo {
                         Text("Estás viendo el demo.")
                             .font(.forum(14))
@@ -309,7 +318,10 @@ struct RootView: View {
                 }
             }
 
-            if module != .cashflow {
+            if module == .debts {
+                // El módulo vive abajo, en sus propias tarjetas.
+                EmptyView()
+            } else if module != .cashflow {
                 comingSoon
             } else {
                 if response.years.count > 1 {
@@ -369,6 +381,8 @@ struct RootView: View {
             AnnualScreen(store: store)
         case .month(let index):
             MonthDetailScreen(store: store, monthIndex: index, editable: dataset == .live)
+        case .debt(let id):
+            DebtScheduleScreen(store: store, debtId: id)
         }
     }
 
@@ -558,6 +572,16 @@ struct RootView: View {
             if let fresh = response {
                 Outbox.shared.reconcile(year: fresh.year, months: fresh.months)
             }
+            // Las deudas viajan en su propio archivo autoestampado: solo se
+            // decodifican cuando su sello cambió. Un servidor sin reiniciar
+            // aún no lo escribe — el módulo lo dice en vez de tronar.
+            let debtsStamp = appliedDebtsStamp
+            if let debtsLoad = try? await Task.detached(priority: silent ? .utility : .userInitiated, operation: {
+                try SnapshotStore.loadDebtsDetail(unlessStamp: debtsStamp)
+            }).value {
+                appliedDebtsStamp = debtsLoad.generatedAt
+                store.debtDetails = debtsLoad.debts
+            }
         } catch SnapshotError.missing {
             // El formato por año aún no existe: servidor sin reiniciar. El
             // archivo único de antes sigue siendo la verdad mientras tanto.
@@ -622,6 +646,7 @@ struct RootView: View {
         // demo; un snapshot empacado viejo no los trae y el editor degrada.
         store.categories = snapshot.categories ?? []
         store.debts = snapshot.debts ?? []
+        store.debtDetails = snapshot.debtsDetail ?? []
         generatedAt = nil
         errorMessage = response == nil ? "El demo empacado no se pudo leer." : nil
     }

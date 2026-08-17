@@ -26,6 +26,8 @@ struct MobileSnapshot: Decodable {
     let categories: [String]?
     /// Las deudas activas del dataset, para el selector de abonos.
     let debts: [DebtOption]?
+    /// El módulo de deudas del demo, ya calculado.
+    let debtsDetail: [DebtDetail]?
 }
 
 struct SnapshotDataset: Decodable {
@@ -151,6 +153,78 @@ struct Entry: Decodable, Identifiable {
 struct DebtOption: Decodable, Identifiable {
     let id: String
     let name: String
+}
+
+/// mobile/debts.json: las deudas con su plan ya calculado por el servidor —
+/// lo mismo que contesta /api/debts/detail. El teléfono solo pinta.
+struct DebtsSnapshot: Decodable {
+    let generatedAt: String?
+    let debts: [DebtDetail]
+}
+
+/// El nombre de una deuda: {"es","en"} en los archivos actuales, o texto
+/// plano en los viejos.
+enum DebtName: Decodable {
+    case localized([String: String])
+    case plain(String)
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let names = try? container.decode([String: String].self) {
+            self = .localized(names)
+        } else {
+            self = .plain((try? container.decode(String.self)) ?? "")
+        }
+    }
+
+    var display: String {
+        switch self {
+        case .localized(let names):
+            return names["es"] ?? names["en"] ?? names.values.first ?? "Deuda"
+        case .plain(let name):
+            return name.isEmpty ? "Deuda" : name
+        }
+    }
+}
+
+struct DebtDetail: Decodable, Identifiable {
+    let id: String
+    let name: DebtName?
+    let financedCapital: Double
+    let annualInterestRate: Double
+    let monthlyPayment: Double
+    let installment: Double?
+    let termMonths: Int
+    let effectiveTermMonths: Int?
+    let paidInstallments: Int
+    let remainingInstallments: Int
+    let remainingBalance: Double
+    /// Capital pagado sobre capital financiado, 0–100 — la misma medida
+    /// de la web, que un plan acortado por abonos sí puede llevar al 100.
+    let progress: Double
+    let totalInterest: Double
+    let total: Double
+    let schedule: [DebtPeriod]
+
+    var displayName: String { name?.display ?? "Deuda" }
+}
+
+/// Una cuota del plan. El período 0 es el arranque: ahí viven los abonos
+/// hechos antes de la primera cuota.
+struct DebtPeriod: Decodable, Identifiable {
+    let period: Int
+    let installment: Double
+    let interest: Double
+    let principal: Double
+    let extraPayment: Double
+    let actualPayment: Double
+    let totalPayment: Double
+    let paid: Bool
+    let balance: Double
+    let monthIndex: Int?
+    let year: Int?
+
+    var id: Int { period }
 }
 
 /// Una edición del histórico: cuándo, desde dónde, y qué campos cambiaron.

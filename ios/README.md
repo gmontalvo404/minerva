@@ -1,6 +1,6 @@
 # Minerva para iOS
 
-La vista de cashflow en el iPhone. La app abre en una portada con dos caminos:
+Cash flow y deudas en el iPhone. La app abre en una portada con dos caminos:
 **Iniciar sesión** (Face ID → tus datos reales) o **Abrir demo** (sin sesión,
 para enseñar la app sin enseñar un peso). Adentro, el selector es el sidebar
 de la web hecho pantalla: año y vista (anual o un mes) en cuadritos. Se puede

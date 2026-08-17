@@ -196,6 +196,17 @@ enum SnapshotStore {
         )
     }
 
+    /// mobile/debts.json: el módulo de deudas ya calculado, en su propio
+    /// archivo autoestampado. Con `unlessStamp`, si trae ese mismo
+    /// generated_at devuelve nil sin gastar en decodificar.
+    static func loadDebtsDetail(unlessStamp stamp: String? = nil) throws -> DebtsSnapshot? {
+        let payload = try coordinatedRead("mobile/debts.json")
+        if let stamp, let quick = quickStamp(of: payload), quick == stamp {
+            return nil
+        }
+        return try makeDecoder().decode(DebtsSnapshot.self, from: payload)
+    }
+
     /// El formato viejo de un solo archivo, para mientras el servidor no se
     /// haya reiniciado con el partido por año. Con `unlessStamp`, si trae ese
     /// mismo generated_at devuelve nil sin gastar en decodificar.

@@ -251,6 +251,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                     "dashboards": {},
                     "categories": self._shared_category_names(),
                     "debts": self._mobile_debt_catalog(DEMO_URL_PREFIX),
+                    "debts_detail": self._mobile_debts_detail(DEMO_URL_PREFIX),
                     "demo": self._snapshot_dataset(f"{DEMO_URL_PREFIX}/cash_flow"),
                 },
             )
@@ -2967,6 +2968,19 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             "dashboards": {year: self._build_dashboard(cash_flow_root, year) for year in years},
         }
 
+    def _mobile_debts_detail(self, url_prefix: str) -> list:
+        """Las deudas con su plan ya calculado — lo mismo que contesta
+        /api/debts/detail — para que el teléfono pinte el módulo sin HTTP."""
+        try:
+            _, debts, _ = self._load_debts(f"{url_prefix}/debts/debts.json")
+        except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+            return []
+        return [
+            self._build_debt_detail(debt, self._debt_linked_payments_across_years(debt, debts))
+            for debt in debts
+            if isinstance(debt, dict)
+        ]
+
     def _mobile_debt_catalog(self, url_prefix: str) -> list:
         """Las deudas activas en lo mínimo que el selector del teléfono
         necesita: id y nombre — en español, como toda la app iOS."""
@@ -3025,6 +3039,13 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                     )
                     for year_key, dashboard in live["dashboards"].items()
                 }
+                # El módulo de deudas del teléfono: su propio archivo
+                # autoestampado, junto a los años.
+                self._write_if_changed(
+                    target_dir / "debts.json",
+                    {"ok": True, "debts": self._mobile_debts_detail(DATA_URL_PREFIX)},
+                    stamp,
+                )
                 manifest = {
                     "years": live["years"],
                     "categories": self._shared_category_names(),
