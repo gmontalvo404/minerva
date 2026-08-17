@@ -26,7 +26,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.gmontalvo.minerva.mobile
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: 9LWWWNT87G
+        # El equipo de firma sale del entorno: cada quien compila con el suyo
+        # y el repo no carga el de nadie. Sin la variable, Xcode simplemente
+        # pide elegir equipo en Signing & Capabilities. Ver el README.
+        DEVELOPMENT_TEAM: ${MINERVA_TEAM_ID}
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_VERSION: "5.9"
         MARKETING_VERSION: "1.0"
