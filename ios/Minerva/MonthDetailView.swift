@@ -1,22 +1,37 @@
 import SwiftUI
 
+/// Las tres acciones del demo: aplicar en memoria lo que en la sesión real
+/// viaja por el buzón de iCloud.
+struct DemoActions {
+    let update: ([String: Outbox.PendingValue], Entry) -> Void
+    /// (campos, original): con original presente es un duplicado.
+    let create: ([String: Outbox.PendingValue], Entry?) -> Void
+    let delete: (Entry) -> Void
+}
+
 /// Un mes: su tabla de resumen y los gastos agrupados por tipo — la vista
-/// mensual del dashboard, sin edición y con la misma cara que la web.
+/// mensual del dashboard, con la misma cara y las mismas acciones que la
+/// web: editar, crear, duplicar, borrar y ver el histórico.
 struct MonthDetailView: View {
     let month: MonthSummary
+    /// A qué año pertenece: crear y borrar confirman contra su año.
+    let year: String
     /// La sesión real edita a través del buzón de iCloud.
     let editable: Bool
     /// El catálogo compartido de categorías, para el modal de edición.
     let categories: [String]
-    /// El guardado del demo: cuando está presente, el cambio entra directo
-    /// al dashboard en memoria (DemoMath) en vez de viajar por el buzón.
-    var demoApply: (([String: Outbox.PendingValue], Entry) -> Void)?
+    /// Presente solo en el demo: los cambios entran directo al dashboard en
+    /// memoria (DemoMath) en vez de viajar por el buzón.
+    var demo: DemoActions?
     @Environment(\.colorScheme) private var scheme
     @ObservedObject private var outbox = Outbox.shared
     @State private var editingEntry: Entry?
+    @State private var showCreate = false
+    @State private var entryToDelete: Entry?
+    @State private var historyEntry: Entry?
 
     private var theme: Theme { .of(scheme) }
-    private var canEdit: Bool { editable || demoApply != nil }
+    private var canEdit: Bool { editable || demo != nil }
 
     var body: some View {
         ZStack {
@@ -46,15 +61,58 @@ struct MonthDetailView: View {
                     .font(.forum(20))
                     .foregroundStyle(theme.heading)
             }
+            if canEdit {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showCreate = true
+                    } label: {
+                        Label("Nuevo movimiento", systemImage: "plus")
+                    }
+                }
+            }
         }
         .sheet(item: $editingEntry) { entry in
             EditEntryView(entry: entry, categories: categoryOptions(for: entry)) { changes in
-                if let demoApply {
-                    demoApply(changes, entry)
+                if let demo {
+                    demo.update(changes, entry)
                 } else {
                     Outbox.shared.queueUpdate(changes, entry: entry)
                 }
             }
+        }
+        .sheet(isPresented: $showCreate) {
+            EditEntryView(entry: nil, categories: categoryOptions(for: nil)) { fields in
+                if let demo {
+                    demo.create(fields, nil)
+                } else {
+                    Outbox.shared.queueCreate(fields, in: month, year: year)
+                }
+            }
+        }
+        .sheet(item: $historyEntry) { entry in
+            HistorySheet(entry: entry, theme: theme)
+        }
+        .confirmationDialog(
+            "¿Eliminar \"\((entryToDelete?.description ?? "movimiento"))\"?",
+            isPresented: Binding(
+                get: { entryToDelete != nil },
+                set: { if !$0 { entryToDelete = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: entryToDelete
+        ) { entry in
+            Button("Eliminar", role: .destructive) {
+                if let demo {
+                    demo.delete(entry)
+                } else {
+                    Outbox.shared.queueDelete(entry, year: year, monthIndex: month.index)
+                }
+            }
+            Button("Cancelar", role: .cancel) {}
+        } message: { _ in
+            Text(demo == nil
+                ? "El borrado viaja al Mac y no se puede deshacer."
+                : "En el demo se borra al instante; vuelve al entrar de nuevo.")
         }
     }
 
@@ -176,41 +234,133 @@ struct MonthDetailView: View {
         ForEach(EntryKind.allCases) { kind in
             // Tipo desconocido cae en necesidades, igual que _summarize_month.
             let entries = month.entries.filter { (EntryKind(rawValue: $0.type ?? "") ?? .needs) == kind }
-            if !entries.isEmpty {
+            // Las creaciones en vuelo se pintan como filas fantasma al final
+            // de su tipo — también cuando el tipo aún no tiene movimientos.
+            let ghosts = demo == nil
+                ? outbox.pendingCreations(year: year, monthIndex: month.index)
+                    .filter { $0.type == kind.rawValue }
+                : []
+            if !entries.isEmpty || !ghosts.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         Circle().fill(kind.color).frame(width: 9, height: 9)
                         Eyebrow(kind.label, theme)
                     }
                     ForEach(entries) { entry in
-                        HStack(spacing: 8) {
-                            syncBadge(for: entry)
-                            paidSwitch(for: entry)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(entry.description ?? "—")
-                                    .font(.forum(17))
-                                    .foregroundStyle(theme.text)
-                                    .lineLimit(1)
-                                if let category = entry.category, !category.isEmpty {
-                                    Text(category)
-                                        .font(.forum(13))
-                                        .foregroundStyle(theme.muted)
-                                }
-                            }
-                            Spacer(minLength: 8)
-                            Text(Format.copNoCode(entry.amountCop))
-                                .font(.forum(17))
-                                .foregroundStyle(theme.heading)
-                                .lineLimit(1)
-                        }
-                        // La fila entera abre el editor; el switch, que es un
-                        // control de verdad, se queda con su propio toque.
-                        .contentShape(Rectangle())
-                        .onTapGesture { openEditor(for: entry) }
+                        entryRow(entry)
+                    }
+                    ForEach(ghosts) { ghost in
+                        ghostRow(ghost)
                     }
                 }
                 .card(theme)
             }
+        }
+    }
+
+    private func entryRow(_ entry: Entry) -> some View {
+        // Un borrado en vuelo apaga la fila: sigue visible (la verdad aún
+        // no llega) pero ya no es tocable.
+        let deleting = outbox.pendingKind(for: entry) == .delete
+        return HStack(spacing: 8) {
+            syncBadge(for: entry)
+            paidSwitch(for: entry)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(entry.description ?? "—")
+                    .font(.forum(17))
+                    .foregroundStyle(theme.text)
+                    .strikethrough(deleting)
+                    .lineLimit(1)
+                if let category = entry.category, !category.isEmpty {
+                    Text(category)
+                        .font(.forum(13))
+                        .foregroundStyle(theme.muted)
+                }
+            }
+            Spacer(minLength: 8)
+            Text(Format.copNoCode(entry.amountCop))
+                .font(.forum(17))
+                .foregroundStyle(theme.heading)
+                .lineLimit(1)
+        }
+        .opacity(deleting ? 0.45 : 1)
+        // La fila entera abre el editor; el switch, que es un control de
+        // verdad, se queda con su propio toque. Dejar presionado abre el
+        // menú con el resto de acciones — el de la web, hecho nativo.
+        .contentShape(Rectangle())
+        .onTapGesture { openEditor(for: entry) }
+        .contextMenu {
+            if canTouch(entry), !deleting {
+                Button {
+                    openEditor(for: entry)
+                } label: {
+                    Label("Editar", systemImage: "pencil")
+                }
+                Button {
+                    duplicate(entry)
+                } label: {
+                    Label("Duplicar", systemImage: "plus.square.on.square")
+                }
+            }
+            Button {
+                historyEntry = entry
+            } label: {
+                Label("Ver histórico", systemImage: "clock.arrow.circlepath")
+            }
+            if canTouch(entry), !deleting {
+                Button(role: .destructive) {
+                    entryToDelete = entry
+                } label: {
+                    Label("Eliminar", systemImage: "trash")
+                }
+            }
+        }
+    }
+
+    private func ghostRow(_ ghost: Outbox.PendingCreation) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "clock.fill")
+                .font(.caption)
+                .foregroundStyle(theme.accent)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(ghost.description)
+                    .font(.forum(17))
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+                if !ghost.category.isEmpty {
+                    Text(ghost.category)
+                        .font(.forum(13))
+                        .foregroundStyle(theme.muted)
+                }
+            }
+            Spacer(minLength: 8)
+            Text(Format.copNoCode(ghost.amountCop))
+                .font(.forum(17))
+                .foregroundStyle(theme.heading)
+                .lineLimit(1)
+        }
+        .opacity(0.55)
+    }
+
+    /// Editar, duplicar y borrar piden sesión con permiso de edición y un
+    /// movimiento normal: las cuotas de una deuda se tocan en la deuda.
+    private func canTouch(_ entry: Entry) -> Bool {
+        canEdit && entry.autoGenerated != true
+            && entry.sourcePath != nil && entry.sourceIndex != nil
+    }
+
+    private func duplicate(_ entry: Entry) {
+        let fields: [String: Outbox.PendingValue] = [
+            "description": .text(entry.description ?? ""),
+            "category": .text(entry.category ?? ""),
+            "amount_cop": .number(entry.amountCop),
+            "type": .text(entry.type ?? "needs"),
+            "paid": .flag(entry.isPaid),
+        ]
+        if let demo {
+            demo.create(fields, entry)
+        } else {
+            Outbox.shared.queueCreate(fields, in: month, year: year, after: entry)
         }
     }
 
@@ -233,9 +383,9 @@ struct MonthDetailView: View {
         return Toggle("", isOn: Binding(
             get: { shown },
             set: { wanted in
-                if let demoApply {
+                if let demo {
                     // En el demo no hay Mac que confirme: aplica al instante.
-                    demoApply(["paid": .flag(wanted)], entry)
+                    demo.update(["paid": .flag(wanted)], entry)
                 } else {
                     outbox.queueSetPaid(wanted, entry: entry)
                 }
@@ -247,30 +397,136 @@ struct MonthDetailView: View {
         // caja al tamaño ya escalado.
         .scaleEffect(0.58)
         .frame(width: 32)
-        .disabled(!canEdit || entry.sourcePath == nil || entry.sourceIndex == nil)
+        // Las cuotas auto-generadas sí permiten el pagado — solo el pagado.
+        .disabled(!canEdit || entry.sourcePath == nil || entry.sourceIndex == nil
+            || outbox.pendingKind(for: entry) == .delete)
     }
 
 
     /// El toque en la fila abre el editor — también en el demo, que aplica
-    /// en memoria. Nunca para las cuotas auto-generadas de una deuda: esas
-    /// se editan en la deuda.
+    /// en memoria. Nunca para las cuotas auto-generadas de una deuda ni para
+    /// una fila con borrado en vuelo.
     private func openEditor(for entry: Entry) {
-        guard canEdit, entry.autoGenerated != true,
-              entry.sourcePath != nil, entry.sourceIndex != nil else { return }
+        guard canTouch(entry), outbox.pendingKind(for: entry) != .delete else { return }
         editingEntry = entry
     }
 
     /// El catálogo compartido cuando el snapshot lo trae; si no, lo visto en
     /// el mes. La categoría actual siempre está, para que el selector la abra.
-    private func categoryOptions(for entry: Entry) -> [String] {
+    private func categoryOptions(for entry: Entry?) -> [String] {
         var list = categories
         if list.isEmpty {
             list = Array(Set(month.entries.compactMap(\.category))).filter { !$0.isEmpty }.sorted()
         }
-        if let current = entry.category, !current.isEmpty, !list.contains(current) {
+        if let current = entry?.category, !current.isEmpty, !list.contains(current) {
             list.insert(current, at: 0)
         }
         return list
+    }
+
+    /// La hoja de histórico: cada edición con su fecha, desde qué aparato
+    /// vino y qué campos cambiaron — el history-dialog de la web, nativo.
+    fileprivate struct HistorySheet: View {
+        let entry: Entry
+        let theme: Theme
+
+        var body: some View {
+            ZStack {
+                theme.bg.ignoresSafeArea()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Eyebrow("Histórico", theme)
+                            Text(entry.description ?? "Movimiento")
+                                .font(.forum(24))
+                                .foregroundStyle(theme.heading)
+                        }
+
+                        if events.isEmpty {
+                            Text("Sin ediciones registradas.")
+                                .font(.forum(16))
+                                .foregroundStyle(theme.muted)
+                        }
+                        ForEach(events) { event in
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text(Self.formatted(event.changedAt))
+                                        .font(.forum(16))
+                                        .foregroundStyle(theme.heading)
+                                    Spacer()
+                                    Text(event.changedBy ?? "—")
+                                        .font(.forum(13))
+                                        .foregroundStyle(theme.muted)
+                                }
+                                ForEach(changeRows(of: event), id: \.0) { row in
+                                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                        Text(row.0)
+                                            .font(.forum(14))
+                                            .foregroundStyle(theme.muted)
+                                        Spacer()
+                                        Text(row.1)
+                                            .font(.forum(15))
+                                            .foregroundStyle(theme.text)
+                                            .multilineTextAlignment(.trailing)
+                                    }
+                                }
+                            }
+                            .card(theme)
+                        }
+
+                        if let created = entry.createdAt {
+                            Text("Creado " + Self.formatted(created))
+                                .font(.forum(13))
+                                .foregroundStyle(theme.muted)
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+
+        private var events: [HistoryEvent] { entry.history ?? [] }
+
+        private func changeRows(of event: HistoryEvent) -> [(String, String)] {
+            (event.changes ?? [:])
+                .sorted { $0.key < $1.key }
+                .map { key, change in
+                    (Self.fieldLabel(key), "\(change.from?.display ?? "—") → \(change.to?.display ?? "—")")
+                }
+        }
+
+        /// El decoder camelliza las claves de los campos: se aceptan ambas.
+        private static func fieldLabel(_ raw: String) -> String {
+            switch raw {
+            case "description": return "Descripción"
+            case "category": return "Categoría"
+            case "amountCop", "amount_cop": return "Monto"
+            case "type", "targetType", "target_type": return "Tipo"
+            case "paid", "active": return "Pagado"
+            case "received": return "Recibido"
+            default: return raw
+            }
+        }
+
+        private static let isoFull: ISO8601DateFormatter = {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return formatter
+        }()
+
+        private static let isoPlain = ISO8601DateFormatter()
+
+        private static func formatted(_ raw: String?) -> String {
+            guard let raw, let date = isoFull.date(from: raw) ?? isoPlain.date(from: raw) else {
+                return raw ?? "—"
+            }
+            return date.formatted(
+                Date.FormatStyle(date: .abbreviated, time: .shortened, locale: Locale(identifier: "es"))
+            )
+        }
     }
 
     private var incomeList: some View {

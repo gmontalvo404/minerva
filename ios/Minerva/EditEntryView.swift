@@ -1,14 +1,15 @@
 import SwiftUI
 import UIKit
 
-/// El modal de edición, con la misma cara del "nuevo movimiento" de la web:
-/// panel con degradado y radio 28, campos con su etiqueta en mayúsculas,
-/// inputs de radio 14, la shell del tipo teñida con su color y el par
-/// cancelar/guardar — ghost y degradado. Guardar no escribe nada aquí:
-/// encola el comando en el buzón y el circulito queda en reloj hasta que
-/// el Mac confirme con un snapshot nuevo.
+/// El modal de edición y de creación, con la misma cara del "nuevo
+/// movimiento" de la web: panel con degradado y radio 28, campos con su
+/// etiqueta en mayúsculas, inputs de radio 14, la shell del tipo teñida con
+/// su color y el par cancelar/guardar — ghost y degradado. Guardar no
+/// escribe nada aquí: entrega los campos al llamador, que los encola en el
+/// buzón o los aplica en el demo.
 struct EditEntryView: View {
-    let entry: Entry
+    /// nil = crear un movimiento nuevo desde cero.
+    let entry: Entry?
     /// El catálogo compartido si el snapshot lo trae; si no, lo visto en el mes.
     let categories: [String]
     let onSave: ([String: Outbox.PendingValue]) -> Void
@@ -31,16 +32,17 @@ struct EditEntryView: View {
 
     private var theme: Theme { .of(scheme) }
     private var dark: Bool { scheme == .dark }
+    private var isCreation: Bool { entry == nil }
 
-    init(entry: Entry, categories: [String], onSave: @escaping ([String: Outbox.PendingValue]) -> Void) {
+    init(entry: Entry?, categories: [String], onSave: @escaping ([String: Outbox.PendingValue]) -> Void) {
         self.entry = entry
         self.categories = categories
         self.onSave = onSave
-        _descriptionText = State(initialValue: entry.description ?? "")
-        _category = State(initialValue: entry.category ?? "")
-        _kind = State(initialValue: EntryKind(rawValue: entry.type ?? "") ?? .needs)
-        _amountText = State(initialValue: Self.plainAmount(entry.amountCop))
-        _paid = State(initialValue: entry.isPaid)
+        _descriptionText = State(initialValue: entry?.description ?? "")
+        _category = State(initialValue: entry?.category ?? "")
+        _kind = State(initialValue: EntryKind(rawValue: entry?.type ?? "") ?? .needs)
+        _amountText = State(initialValue: entry.map { Self.plainAmount($0.amountCop) } ?? "")
+        _paid = State(initialValue: entry?.isPaid ?? false)
     }
 
     var body: some View {
@@ -92,7 +94,7 @@ struct EditEntryView: View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 3) {
                 Eyebrow("Movimiento", theme)
-                Text("Editar movimiento")
+                Text(isCreation ? "Nuevo movimiento" : "Editar movimiento")
                     .font(.forum(24))
                     .foregroundStyle(theme.heading)
             }
@@ -270,9 +272,11 @@ struct EditEntryView: View {
 
     // MARK: - Qué cambió
 
-    /// Solo los campos distintos al movimiento viajan: un modal cerrado sin
-    /// tocar nada no manda comando alguno.
+    /// Editando, solo los campos distintos al movimiento viajan: un modal
+    /// cerrado sin tocar nada no manda comando alguno. Creando, viaja el
+    /// movimiento completo — vacío mientras falten descripción o monto.
     private var changes: [String: Outbox.PendingValue] {
+        guard let entry else { return creationFields }
         var out: [String: Outbox.PendingValue] = [:]
         let trimmed = descriptionText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty, trimmed != (entry.description ?? "") {
@@ -289,6 +293,21 @@ struct EditEntryView: View {
         }
         if paid != entry.isPaid {
             out["paid"] = .flag(paid)
+        }
+        return out
+    }
+
+    private var creationFields: [String: Outbox.PendingValue] {
+        let trimmed = descriptionText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let amount = Self.parseAmount(amountText) else { return [:] }
+        var out: [String: Outbox.PendingValue] = [
+            "description": .text(trimmed),
+            "type": .text(kind.rawValue),
+            "amount_cop": .number(amount),
+            "paid": .flag(paid),
+        ]
+        if !category.isEmpty {
+            out["category"] = .text(category)
         }
         return out
     }

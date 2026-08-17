@@ -16,6 +16,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import time
 import unicodedata
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, unquote, urlparse
 from urllib.request import Request, urlopen
 import webbrowser
@@ -544,7 +545,6 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         entry_payload = payload["entry"]
         if not isinstance(entry_payload, dict):
             raise ValueError("Missing entry payload")
-        entry_payload["id"] = self._next_entry_id(relative_path)
 
         document, entries, target_path = self._load_entries(relative_path, create_if_missing=True)
         is_unified_outcomes = self._is_unified_outcomes_path(target_path)
@@ -563,6 +563,9 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                     raise ValueError("Cannot insert a movement after a different type")
 
         new_entry = self._normalize_new_entry(entry_payload)
+        # El id va DESPUÉS de normalizar: _normalize_new_entry arma un dict
+        # nuevo y se comería uno puesto antes — así nacían movimientos sin id.
+        new_entry["id"] = self._next_entry_id(relative_path)
         if is_unified_outcomes:
             new_entry["type"] = target_type
         self._ensure_entry_audit_fields(new_entry)
@@ -3218,7 +3221,7 @@ def apply_outbox_command(command_path: Path, host: str) -> None:
         return
 
     action = command.get("action")
-    if action not in {"set_paid", "update_entry"}:
+    if action not in {"set_paid", "update_entry", "create_entry", "delete_entry"}:
         reject_outbox_command(command_path, f"acción desconocida: {action!r}")
         return
 
@@ -3227,7 +3230,34 @@ def apply_outbox_command(command_path: Path, host: str) -> None:
         target, _root = resolve_dataset_path(relative_path)
         entries = json.loads(target.read_text(encoding="utf-8")).get("entries", [])
     except Exception:  # noqa: BLE001 — cualquier falla = comando inválido
-        reject_outbox_command(command_path, "el archivo no existe")
+        # Crear puede apuntar a un mes cuyo archivo aún no existe: el
+        # endpoint lo crea. Para el resto, sin archivo no hay movimiento.
+        if action == "create_entry":
+            entries = []
+        else:
+            reject_outbox_command(command_path, "el archivo no existe")
+            return
+
+    if action == "create_entry":
+        # Un movimiento nuevo (o duplicado) hecho en el teléfono. El id lo
+        # asigna el endpoint; si venía "después de" un movimiento que ya no
+        # está, cae al final de su tipo en vez de rechazarse.
+        entry_payload = command.get("entry")
+        if not isinstance(entry_payload, dict) or not str(entry_payload.get("description", "")).strip():
+            reject_outbox_command(command_path, "comando sin movimiento")
+            return
+        unknown = sorted(set(entry_payload) - {"description", "category", "amount_cop", "type", "paid"})
+        if unknown:
+            reject_outbox_command(command_path, f"campos no permitidos: {', '.join(unknown)}")
+            return
+        payload_dict = {"path": relative_path, "entry": entry_payload}
+        after_id = command.get("after_entry_id")
+        if after_id is not None:
+            for position, candidate in enumerate(entries):
+                if isinstance(candidate, dict) and candidate.get("id") == after_id:
+                    payload_dict["insert_after_index"] = position
+                    break
+        post_outbox_command(command_path, host, "/api/entries/create", payload_dict)
         return
 
     # Primero por id permanente: encuentra el movimiento aunque la lista se
@@ -3242,6 +3272,15 @@ def apply_outbox_command(command_path: Path, host: str) -> None:
                 entry, index = candidate, position
                 break
         if entry is None:
+            if action == "delete_entry":
+                # Borrar algo que ya no está es la mitad idempotente de
+                # borrar: el comando se consume como aplicado.
+                print(f"Buzón: {command_path.name} ya estaba aplicado", file=sys.stderr)
+                try:
+                    command_path.unlink()
+                except OSError:
+                    pass
+                return
             reject_outbox_command(command_path, f"no hay movimiento con id {entry_id}")
             return
     else:
@@ -3254,6 +3293,15 @@ def apply_outbox_command(command_path: Path, host: str) -> None:
         if str(entry.get("description", "")) != str(command.get("description", "")):
             reject_outbox_command(command_path, "el movimiento cambió de lugar")
             return
+
+    if action == "delete_entry":
+        # La identidad ya quedó resuelta (id permanente, o índice + huella):
+        # solo queda pedirle el borrado al endpoint.
+        post_outbox_command(
+            command_path, host, "/api/entries/delete",
+            {"path": relative_path, "entry_index": index},
+        )
+        return
 
     if action == "set_paid":
         # Idempotencia: si el movimiento ya está como el comando pide (doble
@@ -3282,24 +3330,42 @@ def apply_outbox_command(command_path: Path, host: str) -> None:
             reject_outbox_command(command_path, f"campos no permitidos: {', '.join(unknown)}")
             return
 
-    payload = json.dumps({
-        "path": relative_path,
-        "entry_index": index,
-        "updates": updates,
-        "origin": str(command.get("device") or "iPhone"),
-    }).encode("utf-8")
+    post_outbox_command(
+        command_path, host, "/api/entries/update",
+        {
+            "path": relative_path,
+            "entry_index": index,
+            "updates": updates,
+            "origin": str(command.get("device") or "iPhone"),
+        },
+    )
+
+
+def post_outbox_command(command_path: Path, host: str, endpoint: str, payload_dict: dict) -> None:
+    """Aplica un comando contra la propia API y consume el archivo.
+
+    Un 4xx es un comando que jamás va a funcionar (movimiento auto-generado,
+    campos inválidos): se rechaza para que no reintente cada 3 segundos por
+    siempre. Todo lo demás — servidor arrancando, 5xx, corte — se reintenta
+    en el próximo ciclo y el archivo espera en el buzón.
+    """
+    payload = json.dumps(payload_dict).encode("utf-8")
     try:
         urlopen(
             Request(
-                f"http://{host}:{PORT}/api/entries/update",
+                f"http://{host}:{PORT}{endpoint}",
                 data=payload,
                 headers={"Content-Type": "application/json"},
             ),
             timeout=15,
         ).read()
+    except HTTPError as error:
+        if 400 <= error.code < 500:
+            reject_outbox_command(command_path, f"el servidor lo rechazó ({error.code})")
+            return
+        print(f"Buzón: reintentaré {command_path.name}: {error}", file=sys.stderr)
+        return
     except OSError as error:
-        # El servidor aún no contesta o la escritura falló: se reintenta en
-        # el próximo ciclo, el comando se queda en el buzón.
         print(f"Buzón: reintentaré {command_path.name}: {error}", file=sys.stderr)
         return
 

@@ -17,6 +17,18 @@ final class DashboardStore: ObservableObject {
         guard let response else { return }
         self.response = DemoMath.applying(changes, to: entry, in: response)
     }
+
+    /// Crear (o duplicar, si viene el original) en el demo, al instante.
+    func applyDemoCreate(_ fields: [String: Outbox.PendingValue], monthIndex: Int, after original: Entry?) {
+        guard let response else { return }
+        self.response = DemoMath.creating(fields, monthIndex: monthIndex, after: original, in: response)
+    }
+
+    /// Borrar en el demo, al instante.
+    func applyDemoDelete(_ entry: Entry) {
+        guard let response else { return }
+        self.response = DemoMath.deleting(entry, in: response)
+    }
 }
 
 /// El mes empujado, resuelto contra el store en cada re-render: si el
@@ -27,14 +39,20 @@ private struct MonthDetailScreen: View {
     let editable: Bool
 
     var body: some View {
-        if let month = store.response?.months.first(where: { $0.index == monthIndex }) {
+        if let response = store.response,
+           let month = response.months.first(where: { $0.index == monthIndex }) {
             MonthDetailView(
                 month: month,
+                year: response.year,
                 editable: editable,
                 categories: store.categories,
-                // Sin sesión real, editar existe igual: el demo aplica en
+                // Sin sesión real, todo existe igual: el demo aplica en
                 // memoria y enseña la mecánica completa sin tocar nada.
-                demoApply: editable ? nil : { store.applyDemoEdit($0, to: $1) }
+                demo: editable ? nil : DemoActions(
+                    update: { store.applyDemoEdit($0, to: $1) },
+                    create: { store.applyDemoCreate($0, monthIndex: monthIndex, after: $1) },
+                    delete: { store.applyDemoDelete($0) }
+                )
             )
         }
     }
@@ -531,10 +549,10 @@ struct RootView: View {
                 store.response = dashboard
             }
             errorMessage = response == nil ? SnapshotError.missing.errorDescription : nil
-            // Los cambios pendientes del buzón se confirman (o caducan)
-            // contra lo que el snapshot fresco diga.
-            if let months = response?.months {
-                Outbox.shared.reconcile(months: months)
+            // Los cambios pendientes del buzón se confirman contra lo que
+            // el snapshot fresco diga.
+            if let fresh = response {
+                Outbox.shared.reconcile(year: fresh.year, months: fresh.months)
             }
         } catch SnapshotError.missing {
             // El formato por año aún no existe: servidor sin reiniciar. El
@@ -568,8 +586,8 @@ struct RootView: View {
             store.response = chosen.flatMap { snapshot.dashboards[$0] }
             generatedAt = snapshot.generatedAt.flatMap(Self.isoParser.date(from:))
             errorMessage = response == nil ? SnapshotError.missing.errorDescription : nil
-            if let months = response?.months {
-                Outbox.shared.reconcile(months: months)
+            if let fresh = response {
+                Outbox.shared.reconcile(year: fresh.year, months: fresh.months)
             }
         } catch {
             if !silent || response == nil {
