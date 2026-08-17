@@ -59,7 +59,8 @@ En Xcode:
 `finance/data` vive en iCloud Drive (`Minerva/data`) y el servidor deja ahí
 `mobile/manifest.json` más `mobile/cash_flow/<año>.json`: cada año ya
 calculado, refrescado en cada guardado y al arrancar. El teléfono solo lee
-y pinta.
+y pinta. El contrato completo del snapshot y del buzón de comandos está en
+[server/README.md](../server/README.md).
 
 En la app: **Fuente → Carpeta de iCloud → Elegir carpeta…** y eliges
 `Minerva/data` en iCloud Drive. Una sola vez — el acceso queda guardado.
