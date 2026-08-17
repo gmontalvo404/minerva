@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @AppStorage("appearance") private var appearanceRaw = Appearance.system.rawValue
     @AppStorage("icloudFolderName") private var icloudFolderName = ""
+    @AppStorage("deviceName") private var deviceName = "iPhone"
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
     @State private var pickingFolder = false
@@ -30,6 +31,15 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    TextField("iPhone", text: $deviceName)
+                        .autocorrectionDisabled()
+                } header: {
+                    Text("Dispositivo")
+                } footer: {
+                    Text("Con este nombre quedan firmados en el historial los cambios que hagas desde aquí.")
+                }
+
                 Section("Apariencia") {
                     Picker("Tema", selection: $appearanceRaw) {
                         ForEach(Appearance.allCases) { appearance in
@@ -54,7 +64,7 @@ struct SettingsView: View {
                 } header: {
                     Text("iCloud")
                 } footer: {
-                    Text("Elige la carpeta Minerva/data de iCloud Drive. El servidor del Mac deja ahí mobile/dashboard.json con todos los años ya calculados; iCloud lo trae hasta acá.")
+                    Text("Elige la carpeta Minerva/data de iCloud Drive. El servidor del Mac deja ahí mobile/manifest.json y un archivo por año ya calculado; iCloud los trae hasta acá.")
                 }
 
             }
@@ -68,7 +78,7 @@ struct SettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Text("Ajustes")
-                        .font(.forum(19))
+                        .font(.forum(20))
                         .foregroundStyle(theme.heading)
                 }
                 ToolbarItem(placement: .confirmationAction) {

@@ -3,8 +3,11 @@
 La vista de cashflow en el iPhone. La app abre en una portada con dos caminos:
 **Iniciar sesión** (Face ID → tus datos reales) o **Abrir demo** (sin sesión,
 para enseñar la app sin enseñar un peso). Adentro, el selector es el sidebar
-de la web hecho pantalla: año y vista (anual o un mes) en cuadritos. **Solo
-visualiza** — editar sigue siendo cosa del Mac.
+de la web hecho pantalla: año y vista (anual o un mes) en cuadritos. Se puede
+marcar pagados y editar movimientos: en la sesión real viajan como comandos
+al buzón de iCloud y el Mac los aplica; en el demo aplican al instante en
+memoria (DemoMath re-agrega mes y anual con las fórmulas del servidor) y se
+descartan al salir — un sandbox, como el demo de la web.
 
 **Face ID es la única llave** de los datos reales: política biométrica pura,
 sin respaldo de código — si la cara no pasa, no se entra. La sesión se cierra
@@ -13,7 +16,17 @@ también con el botón de salida siempre visible en la barra superior. El
 selector de multitarea nunca muestra cifras reales.
 
 La app no suma nada por su cuenta: pinta lo que contesta `GET /api/dashboard`,
-la misma regla que el cliente web.
+la misma regla que el cliente web. La única excepción es el demo empacado,
+que no tiene Mac atrás: `DemoMath` espeja `_summarize_month` y
+`_build_dashboard` con sus mismos redondeos.
+
+**El demo empacado no lee `server/bundled/demo` en vivo** (eso lo hace la
+web a través del servidor): viaja congelado en `DemoSnapshot.json`. Si
+cambias la data del demo, refréscalo y recompila:
+
+```bash
+curl -s http://localhost:8123/api/mobile/demo > ios/Minerva/DemoSnapshot.json
+```
 
 ## Requisitos
 
@@ -44,17 +57,19 @@ En Xcode:
 ## Conectar los datos
 
 `finance/data` vive en iCloud Drive (`Minerva/data`) y el servidor deja ahí
-`mobile/dashboard.json`: todos los años ya calculados, refrescado en cada
-guardado y al arrancar. El teléfono solo lee y pinta.
+`mobile/manifest.json` más `mobile/cash_flow/<año>.json`: cada año ya
+calculado, refrescado en cada guardado y al arrancar. El teléfono solo lee
+y pinta.
 
 En la app: **Fuente → Carpeta de iCloud → Elegir carpeta…** y eliges
 `Minerva/data` en iCloud Drive. Una sola vez — el acceso queda guardado.
 
 Funciona desde cualquier parte, sin el Mac prendido y sin abrir el servidor a
-la red. El único costo es el retraso de entrega de iCloud (segundos a
-minutos): la app relee el snapshot sola cada 20 s mientras está abierta —
-apenas iCloud entrega, el cambio aparece sin gestos. El pie de la pantalla
-dice de cuándo es el cálculo.
+la red. El único costo es el retraso de entrega de iCloud (segundos): un
+`NSMetadataQuery` vigila la carpeta mientras la app está abierta — mantiene a
+iCloud trayéndola al día y relee apenas aterriza un archivo, en la pantalla
+que esté abierta, sin gestos. Un sondeo cada 10 s queda de respaldo. El pie
+de la pantalla dice de cuándo es el cálculo.
 
 ## Estructura
 

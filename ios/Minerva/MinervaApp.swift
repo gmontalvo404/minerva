@@ -18,12 +18,16 @@ struct MinervaMobileApp: App {
                     RootView(dataset: .live) { session.logout() }
                 }
 
-                if session.state == .live, scenePhase != .active {
+                if session.state == .live, session.locked {
+                    // La llave de regreso cubre la vista sin destruirla:
+                    // al abrir, sigues donde estabas.
+                    RelockView(session: session)
+                } else if session.state == .live, scenePhase != .active {
                     PrivacyCover()
                 }
             }
             // Forum para todo texto sin fuente explícita: --font-body de la web.
-            .environment(\.font, .forum(17))
+            .environment(\.font, .forum(18))
             // El tema de Ajustes: nil sigue al sistema, como en la web.
             .preferredColorScheme((Appearance(rawValue: appearanceRaw) ?? .system).colorScheme)
             .onChange(of: scenePhase) { phase in

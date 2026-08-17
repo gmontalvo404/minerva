@@ -15,11 +15,30 @@ final class AppSession: ObservableObject {
     }
 
     @Published private(set) var state: State = .entry
+    /// La sesión real pasó al fondo: al volver, Face ID otra vez — pero por
+    /// encima de donde estabas, sin tumbar la navegación.
+    @Published private(set) var locked = false
     @Published private(set) var unlocking = false
     @Published private(set) var failureMessage: String?
 
     func loginWithFaceID() {
-        guard state == .entry, !unlocking else { return }
+        guard state == .entry else { return }
+        authenticate { [weak self] in
+            self?.state = .live
+            self?.locked = false
+        }
+    }
+
+    /// Volver del fondo: misma llave, mismo lugar.
+    func unlockAgain() {
+        guard state == .live, locked else { return }
+        authenticate { [weak self] in
+            self?.locked = false
+        }
+    }
+
+    private func authenticate(onSuccess: @escaping () -> Void) {
+        guard !unlocking else { return }
 
         let context = LAContext()
         // Sin título de respaldo y con la política solo-biometría, el diálogo
@@ -40,7 +59,7 @@ final class AppSession: ObservableObject {
                     localizedReason: "Ver tus finanzas"
                 )
                 if opened {
-                    state = .live
+                    onSuccess()
                 }
             } catch {
                 // Cancelado, cara no reconocida, o biometría bloqueada por
@@ -59,15 +78,64 @@ final class AppSession: ObservableObject {
 
     func logout() {
         state = .entry
+        locked = false
         failureMessage = nil
     }
 
-    /// Al pasar al fondo, la sesión real se cierra; el demo no guarda nada
-    /// que proteger y se queda.
+    /// Al pasar al fondo, la sesión real queda bajo llave (sin perder la
+    /// vista en la que estabas); el demo no guarda nada que proteger.
     func backgrounded() {
         if state == .live {
-            state = .entry
+            locked = true
         }
+    }
+}
+
+/// El candado de regreso: cubre la pantalla donde quedaste y pide la cara.
+/// Al abrir, sigues exactamente donde estabas.
+struct RelockView: View {
+    @ObservedObject var session: AppSession
+    @Environment(\.colorScheme) private var scheme
+
+    private var theme: Theme { .of(scheme) }
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Spacer()
+            Image(systemName: "faceid")
+                .font(.system(size: 44))
+                .foregroundStyle(theme.muted)
+            Text("Minerva")
+                .font(.forum(32))
+                .foregroundStyle(theme.heading)
+            if let message = session.failureMessage {
+                Text(message)
+                    .font(.forum(15))
+                    .foregroundStyle(theme.negative)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+            Button {
+                session.unlockAgain()
+            } label: {
+                Label("Desbloquear", systemImage: "lock.open")
+                    .font(.forum(19))
+                    .frame(maxWidth: 260, minHeight: 34)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(theme.accent)
+            .disabled(session.unlocking)
+
+            Button("Cerrar sesión") {
+                session.logout()
+            }
+            .font(.forum(16))
+            .foregroundStyle(theme.muted)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(theme.bg.ignoresSafeArea())
+        .task { session.unlockAgain() }
     }
 }
 
@@ -82,10 +150,10 @@ struct EntryView: View {
         VStack(spacing: 14) {
             Spacer()
             Text("Minerva")
-                .font(.forum(36))
+                .font(.forum(38))
                 .foregroundStyle(theme.heading)
             Text("Tus finanzas se abren contigo.")
-                .font(.forum(16))
+                .font(.forum(17))
                 .foregroundStyle(theme.muted)
 
             Spacer().frame(height: 18)
@@ -94,7 +162,7 @@ struct EntryView: View {
                 session.loginWithFaceID()
             } label: {
                 Label("Iniciar sesión", systemImage: "faceid")
-                    .font(.forum(18))
+                    .font(.forum(19))
                     .frame(maxWidth: 260, minHeight: 34)
             }
             .buttonStyle(.borderedProminent)
@@ -105,7 +173,7 @@ struct EntryView: View {
                 session.openDemo()
             } label: {
                 Text("Abrir demo")
-                    .font(.forum(18))
+                    .font(.forum(19))
                     .frame(maxWidth: 260, minHeight: 34)
             }
             .buttonStyle(.bordered)
@@ -113,7 +181,7 @@ struct EntryView: View {
 
             if let message = session.failureMessage {
                 Text(message)
-                    .font(.forum(14))
+                    .font(.forum(15))
                     .foregroundStyle(theme.negative)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)

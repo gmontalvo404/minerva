@@ -13,12 +13,23 @@ enum Format {
         return formatter
     }()
 
+    /// formatUsd de la web: moneda de verdad ("US$5.879,87"), no un prefijo.
     private static let usdFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.locale = locale
-        formatter.numberStyle = .decimal
+        formatter.numberStyle = .currency
+        formatter.currencyCode = "USD"
         formatter.minimumFractionDigits = 2
         formatter.maximumFractionDigits = 2
+        return formatter
+    }()
+
+    private static let percent1Formatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.locale = locale
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 1
+        formatter.maximumFractionDigits = 1
         return formatter
     }()
 
@@ -26,8 +37,23 @@ enum Format {
         "COP " + (copFormatter.string(from: NSNumber(value: value)) ?? "0")
     }
 
+    /// formatCopPlain de la web: solo el número agrupado, sin símbolo.
+    static func copPlain(_ value: Double) -> String {
+        copFormatter.string(from: NSNumber(value: value)) ?? "0"
+    }
+
     static func usd(_ value: Double) -> String {
-        "USD " + (usdFormatter.string(from: NSNumber(value: value)) ?? "0")
+        usdFormatter.string(from: NSNumber(value: value)) ?? "US$0"
+    }
+
+    /// formatCopNoCode: "$5.795.331" — símbolo pelado, sin el código COP.
+    static func copNoCode(_ value: Double) -> String {
+        "$" + (copFormatter.string(from: NSNumber(value: value)) ?? "0")
+    }
+
+    /// El porcentaje de la tabla de presupuesto: un decimal, coma española.
+    static func percent1(_ value: Double) -> String {
+        (percent1Formatter.string(from: NSNumber(value: value)) ?? "0") + "%"
     }
 
     static func fx(_ value: Double) -> String {
@@ -36,6 +62,26 @@ enum Format {
 
     static func percent(_ value: Double) -> String {
         String(format: "%.0f%%", value)
+    }
+
+    /// formatShortCop de la web: "$240k", "$2,24M" — dos decimales solo
+    /// mientras la parte entera tiene menos de tres dígitos.
+    static func shortCop(_ value: Double) -> String {
+        let absolute = abs(value)
+        let sign = value < 0 ? "-" : ""
+
+        func compact(_ amount: Double) -> String {
+            let integerDigits = String(Int(amount)).count
+            let formatter = NumberFormatter()
+            formatter.locale = locale
+            formatter.numberStyle = .decimal
+            formatter.maximumFractionDigits = integerDigits >= 3 ? 0 : 2
+            return formatter.string(from: NSNumber(value: amount)) ?? "0"
+        }
+
+        if absolute >= 1_000_000 { return "\(sign)$\(compact(absolute / 1_000_000))M" }
+        if absolute >= 1_000 { return "\(sign)$\(compact(absolute / 1_000))k" }
+        return "\(sign)$\(compact(absolute))"
     }
 
     private static let monthNames = [
@@ -67,11 +113,12 @@ enum EntryKind: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// Las etiquetas exactas del i18n de la web en español.
     var label: String {
         switch self {
-        case .savings: return "Ahorro"
+        case .savings: return "Ahorros"
         case .needs: return "Necesidades"
-        case .wants: return "Gustos"
+        case .wants: return "Deseos"
         case .debts: return "Deudas"
         }
     }
@@ -87,15 +134,16 @@ enum EntryKind: String, CaseIterable, Identifiable {
     }
 }
 
-/// Las etiquetas que el servidor pone en summary_rows, en español.
+/// Las etiquetas que el servidor pone en summary_rows — los mismos textos
+/// que la tabla de presupuesto de la web en español.
 func summaryRowLabel(_ raw: String) -> String {
     switch raw {
     case "incomes": return "Ingresos"
-    case "savings": return "Ahorro"
+    case "savings": return "Ahorros"
     case "needs": return "Necesidades"
-    case "wants": return "Gustos"
+    case "wants": return "Deseos"
     case "debts": return "Deudas"
-    case "after_paid": return "Después de pagar"
+    case "after_paid": return "Disponible después de pagos"
     case "deficit": return "Déficit"
     default: return raw
     }
