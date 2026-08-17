@@ -9,6 +9,8 @@ import UIKit
 final class DashboardStore: ObservableObject {
     @Published var response: DashboardResponse?
     @Published var categories: [String] = []
+    /// Las deudas activas, para el selector de abonos del editor.
+    @Published var debts: [DebtOption] = []
 
     /// El guardado del demo: el cambio entra directo al dashboard en
     /// memoria, con el mes y el anual re-agregados por DemoMath. Se pierde
@@ -46,6 +48,7 @@ private struct MonthDetailScreen: View {
                 year: response.year,
                 editable: editable,
                 categories: store.categories,
+                debts: store.debts,
                 // Sin sesión real, todo existe igual: el demo aplica en
                 // memoria y enseña la mecánica completa sin tocar nada.
                 demo: editable ? nil : DemoActions(
@@ -539,6 +542,7 @@ struct RootView: View {
             appliedSnapshot = loaded.manifestStamp
             appliedYear = loaded.yearKey
             store.categories = loaded.categories
+            store.debts = loaded.debts
             generatedAt = loaded.manifestStamp.flatMap(Self.isoParser.date(from:))
             // dashboard nil = el año en pantalla no cambió (cambió otro).
             if let dashboard = loaded.dashboard {
@@ -614,9 +618,10 @@ struct RootView: View {
 
         let chosen = year.flatMap { demo.dashboards[$0] != nil ? $0 : nil } ?? demo.years.first
         store.response = chosen.flatMap { demo.dashboards[$0] }
-        // El catálogo compartido, para el selector del editor del demo; un
-        // snapshot empacado viejo no lo trae y el editor cae a lo visto.
+        // Los catálogos compartidos, para los selectores del editor del
+        // demo; un snapshot empacado viejo no los trae y el editor degrada.
         store.categories = snapshot.categories ?? []
+        store.debts = snapshot.debts ?? []
         generatedAt = nil
         errorMessage = response == nil ? "El demo empacado no se pudo leer." : nil
     }

@@ -152,6 +152,8 @@ enum SnapshotStore {
         /// "<año>|<sello>": la identidad exacta de lo que quedó aplicado.
         let yearKey: String
         let categories: [String]
+        /// Las deudas activas, para el selector de abonos del editor.
+        let debts: [DebtOption]
         /// nil = el año que se mira no cambió (habrá cambiado otro).
         let dashboard: DashboardResponse?
     }
@@ -189,6 +191,7 @@ enum SnapshotStore {
             year: chosen,
             yearKey: key,
             categories: manifest.categories ?? [],
+            debts: manifest.debts ?? [],
             dashboard: dashboard
         )
     }

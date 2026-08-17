@@ -250,6 +250,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                     "years": [],
                     "dashboards": {},
                     "categories": self._shared_category_names(),
+                    "debts": self._mobile_debt_catalog(DEMO_URL_PREFIX),
                     "demo": self._snapshot_dataset(f"{DEMO_URL_PREFIX}/cash_flow"),
                 },
             )
@@ -2966,6 +2967,31 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             "dashboards": {year: self._build_dashboard(cash_flow_root, year) for year in years},
         }
 
+    def _mobile_debt_catalog(self, url_prefix: str) -> list:
+        """Las deudas activas en lo mínimo que el selector del teléfono
+        necesita: id y nombre — en español, como toda la app iOS."""
+        try:
+            path = self._resolve_data_path(f"{url_prefix}/debts/debts.json")
+            debts = json.loads(path.read_text(encoding="utf-8")).get("debts", [])
+        except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+            return []
+        catalog = []
+        for debt in debts:
+            if not isinstance(debt, dict):
+                continue
+            if str(debt.get("status") or "").lower() in {"canceled", "cancelled"}:
+                continue
+            debt_id = str(debt.get("id") or "").strip()
+            if not debt_id:
+                continue
+            name = debt.get("name")
+            if isinstance(name, dict):
+                label = str(name.get("es") or name.get("en") or debt_id)
+            else:
+                label = str(name or debt_id)
+            catalog.append({"id": debt_id, "name": label})
+        return catalog
+
     def _export_mobile_snapshot(self) -> None:
         """mobile/dashboard.json: every year precomputed, for the iOS app.
 
@@ -3002,6 +3028,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                 manifest = {
                     "years": live["years"],
                     "categories": self._shared_category_names(),
+                    "debts": self._mobile_debt_catalog(DATA_URL_PREFIX),
                     "year_stamps": year_stamps,
                 }
                 self._write_if_changed(target_dir / "manifest.json", manifest, stamp)
@@ -3246,7 +3273,10 @@ def apply_outbox_command(command_path: Path, host: str) -> None:
         if not isinstance(entry_payload, dict) or not str(entry_payload.get("description", "")).strip():
             reject_outbox_command(command_path, "comando sin movimiento")
             return
-        unknown = sorted(set(entry_payload) - {"description", "category", "amount_cop", "type", "paid"})
+        unknown = sorted(
+            set(entry_payload)
+            - {"description", "category", "amount_cop", "type", "paid", "linked_debts", "extra_payment"}
+        )
         if unknown:
             reject_outbox_command(command_path, f"campos no permitidos: {', '.join(unknown)}")
             return
@@ -3325,7 +3355,9 @@ def apply_outbox_command(command_path: Path, host: str) -> None:
         if not isinstance(updates, dict) or not updates:
             reject_outbox_command(command_path, "comando sin updates")
             return
-        unknown = sorted(set(updates) - {"description", "category", "amount_cop", "paid", "target_type"})
+        unknown = sorted(
+            set(updates) - {"description", "category", "amount_cop", "paid", "target_type", "linked_debts"}
+        )
         if unknown:
             reject_outbox_command(command_path, f"campos no permitidos: {', '.join(unknown)}")
             return

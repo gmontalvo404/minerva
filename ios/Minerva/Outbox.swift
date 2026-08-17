@@ -10,11 +10,12 @@ final class Outbox: ObservableObject {
     static let shared = Outbox()
 
     /// Un valor pedido para un campo, tipado para poder compararlo contra lo
-    /// que el snapshot confirmado traiga.
+    /// que el snapshot confirmado traiga. La lista es para linked_debts.
     enum PendingValue: Codable, Equatable {
         case text(String)
         case number(Double)
         case flag(Bool)
+        case list([String])
 
         init(from decoder: Decoder) throws {
             let container = try decoder.singleValueContainer()
@@ -22,6 +23,8 @@ final class Outbox: ObservableObject {
                 self = .flag(flag)
             } else if let number = try? container.decode(Double.self) {
                 self = .number(number)
+            } else if let list = try? container.decode([String].self) {
+                self = .list(list)
             } else {
                 self = .text(try container.decode(String.self))
             }
@@ -33,6 +36,7 @@ final class Outbox: ObservableObject {
             case .text(let value): try container.encode(value)
             case .number(let value): try container.encode(value)
             case .flag(let value): try container.encode(value)
+            case .list(let value): try container.encode(value)
             }
         }
 
@@ -42,6 +46,7 @@ final class Outbox: ObservableObject {
             case .text(let value): return value
             case .number(let value): return value
             case .flag(let value): return value
+            case .list(let value): return value
             }
         }
     }
@@ -404,6 +409,7 @@ final class Outbox: ObservableObject {
         case ("category", .text(let text)): return (entry.category ?? "") == text
         case ("target_type", .text(let text)): return (entry.type ?? "") == text
         case ("amount_cop", .number(let amount)): return abs(entry.amountCop - amount) < 0.005
+        case ("linked_debts", .list(let ids)): return Set(entry.linkedDebts ?? []) == Set(ids)
         default: return false
         }
     }

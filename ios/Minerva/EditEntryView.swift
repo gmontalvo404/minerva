@@ -12,6 +12,8 @@ struct EditEntryView: View {
     let entry: Entry?
     /// El catálogo compartido si el snapshot lo trae; si no, lo visto en el mes.
     let categories: [String]
+    /// Las deudas activas: el selector de abonos aparece con el tipo deudas.
+    let debts: [DebtOption]
     let onSave: ([String: Outbox.PendingValue]) -> Void
 
     @Environment(\.colorScheme) private var scheme
@@ -22,6 +24,8 @@ struct EditEntryView: View {
     @State private var kind: EntryKind
     @State private var amountText: String
     @State private var paid: Bool
+    /// A qué deudas abona: el DebtPicker de la web, hecho filas nativas.
+    @State private var linkedDebts: Set<String>
     /// Cuál selector (categoría o tipo) está abierto como hoja.
     @State private var activePicker: PickerField?
 
@@ -34,15 +38,22 @@ struct EditEntryView: View {
     private var dark: Bool { scheme == .dark }
     private var isCreation: Bool { entry == nil }
 
-    init(entry: Entry?, categories: [String], onSave: @escaping ([String: Outbox.PendingValue]) -> Void) {
+    init(
+        entry: Entry?,
+        categories: [String],
+        debts: [DebtOption],
+        onSave: @escaping ([String: Outbox.PendingValue]) -> Void
+    ) {
         self.entry = entry
         self.categories = categories
+        self.debts = debts
         self.onSave = onSave
         _descriptionText = State(initialValue: entry?.description ?? "")
         _category = State(initialValue: entry?.category ?? "")
         _kind = State(initialValue: EntryKind(rawValue: entry?.type ?? "") ?? .needs)
         _amountText = State(initialValue: entry.map { Self.plainAmount($0.amountCop) } ?? "")
         _paid = State(initialValue: entry?.isPaid ?? false)
+        _linkedDebts = State(initialValue: Set(entry?.linkedDebts ?? []))
     }
 
     var body: some View {
@@ -159,6 +170,54 @@ struct EditEntryView: View {
                 .padding(.horizontal, 14)
                 .frame(minHeight: 46)
                 .background(inputShell(radius: 14))
+            }
+
+            // El DebtPicker de la web: aparece con el tipo deudas, y elegir
+            // una o más deudas vincula el movimiento como abono.
+            if kind == .debts {
+                field("¿Es un abono a una deuda?") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if debts.isEmpty {
+                            Text("No hay deudas activas para vincular.")
+                                .font(.forum(15))
+                                .foregroundStyle(theme.muted)
+                                .padding(.horizontal, 14)
+                                .frame(minHeight: 46)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(inputShell(radius: 14))
+                        } else {
+                            Text("Marca las deudas a las que aplica este abono. Con una o más, el movimiento queda vinculado.")
+                                .font(.forum(13))
+                                .foregroundStyle(theme.muted)
+                            ForEach(debts) { debt in
+                                Button {
+                                    if linkedDebts.contains(debt.id) {
+                                        linkedDebts.remove(debt.id)
+                                    } else {
+                                        linkedDebts.insert(debt.id)
+                                    }
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: linkedDebts.contains(debt.id)
+                                            ? "checkmark.circle.fill" : "circle")
+                                            .font(.system(size: 17))
+                                            .foregroundStyle(linkedDebts.contains(debt.id)
+                                                ? theme.positive : theme.muted)
+                                        Text(debt.name)
+                                            .font(.forum(16))
+                                            .foregroundStyle(theme.heading)
+                                            .lineLimit(1)
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 14)
+                                    .frame(minHeight: 44)
+                                    .background(inputShell(radius: 14))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
             }
 
             HStack(spacing: 10) {
@@ -294,6 +353,12 @@ struct EditEntryView: View {
         if paid != entry.isPaid {
             out["paid"] = .flag(paid)
         }
+        if kind == .debts {
+            let current = Set(entry.linkedDebts ?? [])
+            if linkedDebts != current {
+                out["linked_debts"] = .list(linkedDebts.sorted())
+            }
+        }
         return out
     }
 
@@ -308,6 +373,12 @@ struct EditEntryView: View {
         ]
         if !category.isEmpty {
             out["category"] = .text(category)
+        }
+        // Como en la web: elegir deudas al crear marca el movimiento como
+        // abono extra y lo vincula.
+        if kind == .debts, !linkedDebts.isEmpty {
+            out["linked_debts"] = .list(linkedDebts.sorted())
+            out["extra_payment"] = .flag(true)
         }
         return out
     }

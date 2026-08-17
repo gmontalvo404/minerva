@@ -20,6 +20,8 @@ struct MonthDetailView: View {
     let editable: Bool
     /// El catálogo compartido de categorías, para el modal de edición.
     let categories: [String]
+    /// Las deudas activas, para el selector de abonos del editor.
+    let debts: [DebtOption]
     /// Presente solo en el demo: los cambios entran directo al dashboard en
     /// memoria (DemoMath) en vez de viajar por el buzón.
     var demo: DemoActions?
@@ -72,7 +74,7 @@ struct MonthDetailView: View {
             }
         }
         .sheet(item: $editingEntry) { entry in
-            EditEntryView(entry: entry, categories: categoryOptions(for: entry)) { changes in
+            EditEntryView(entry: entry, categories: categoryOptions(for: entry), debts: debts) { changes in
                 if let demo {
                     demo.update(changes, entry)
                 } else {
@@ -81,7 +83,7 @@ struct MonthDetailView: View {
             }
         }
         .sheet(isPresented: $showCreate) {
-            EditEntryView(entry: nil, categories: categoryOptions(for: nil)) { fields in
+            EditEntryView(entry: nil, categories: categoryOptions(for: nil), debts: debts) { fields in
                 if let demo {
                     demo.create(fields, nil)
                 } else {
