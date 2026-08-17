@@ -36,7 +36,7 @@ for (const file of clientModules) {
   check(`${file.split("/").pop()} sin aritmetica de dinero`, !arithmetic, arithmetic ? "quedan cuentas" : "solo tipos y adaptacion");
 }
 
-const plan = JSON.parse(readFileSync("../finance/app/demo/nutrition/plan.json", "utf8")) as NutritionPlan;
+const plan = JSON.parse(readFileSync("../server/bundled/demo/nutrition/plan.json", "utf8")) as NutritionPlan;
 check("el plan demo sigue legible", plan.ingredients.length > 0, `${plan.ingredients.length} ingredientes`);
 
 console.log("\n== deudas: el calculo vive en el backend ==");
@@ -55,7 +55,7 @@ interface OutcomeFile {
 }
 // El demo empacado en el repo: cifras publicas y estables a proposito, para
 // que este check nunca dependa de datos personales.
-const january = read<OutcomeFile>("../finance/app/demo/cash_flow/demo/outcomes/01-january.json");
+const january = read<OutcomeFile>("../server/bundled/demo/cash_flow/demo/outcomes/01-january.json");
 const planned = (january.entries ?? []).filter(
   (entry) =>
     String(entry.description ?? "").toLowerCase() !== "free" &&
@@ -293,13 +293,20 @@ const annualTableClasses = [
 const missing = expected.filter((cls) => !annual.includes(cls));
 check("clases del marcado original", missing.length === 0, missing.length ? `faltan: ${missing.join(", ")}` : `${expected.length} presentes`);
 
-// Every class we emit has to be one the original app uses too: in its
-// stylesheet, its markup or its render functions. Some, like annual-cell--numeric,
-// carry no style even in the original — what matters is that we invent none.
-const original =
-  readFileSync("./src/ui/legacy.css", "utf8") +
-  readFileSync("../legacy/app.js", "utf8") +
-  readFileSync("../legacy/index.html", "utf8");
+// Every class we emit has to exist in the stylesheet, save for the ones the
+// original markup carried without ever styling them — the retired app left
+// the repo, so its styleless structural classes live on in this list.
+const STYLELESS_CLASSES: string[] = [
+  "annual-col-total",
+  "annual-cell--numeric",
+  "pretty-select-menu--type",
+  "pretty-select-menu--category",
+  "pretty-select-menu--year",
+  "control-sidebar__credit-view",
+  "control-sidebar__nutrition-view",
+  "nutrition-unit-input",
+];
+const original = readFileSync("./src/ui/legacy.css", "utf8") + STYLELESS_CLASSES.join(" ");
 const invented = [...expected, ...annualTableClasses, ...monthlyClasses].filter((cls) => !original.includes(cls));
 check(
   "ninguna clase inventada",
@@ -507,11 +514,25 @@ check(
 );
 
 /**
- * Preferences the original remembers must survive here too, under the very same
- * key: losing one means the reader comes back to a tab they did not choose.
+ * Preferences the original remembered must survive here too, under the very
+ * same key: losing one means the reader comes back to a tab they did not
+ * choose. Frozen from the retired app's last source, since it left the repo.
  */
 const NOT_PORTED_YET = ['"cashflow-dashboard-live-usd-cop-rate"'];
-const originalKeys = [...new Set(readFileSync("../legacy/app.js", "utf8").match(/"cashflow-dashboard-[a-z-]+"/g) ?? [])];
+const originalKeys = [
+  '"cashflow-dashboard-annual-table-currency"',
+  '"cashflow-dashboard-app-mode"',
+  '"cashflow-dashboard-category-sort"',
+  '"cashflow-dashboard-category-sort-direction"',
+  '"cashflow-dashboard-dataset"',
+  '"cashflow-dashboard-debt-view"',
+  '"cashflow-dashboard-language"',
+  '"cashflow-dashboard-live-usd-cop-rate"',
+  '"cashflow-dashboard-selected-file"',
+  '"cashflow-dashboard-selected-month"',
+  '"cashflow-dashboard-theme"',
+  '"cashflow-dashboard-view-mode"',
+];
 const portKeys = readFileSync("./src/lib/storage.ts", "utf8");
 const dropped = originalKeys.filter((key) => !portKeys.includes(key) && !NOT_PORTED_YET.includes(key));
 check(
@@ -521,24 +542,12 @@ check(
 );
 
 /**
- * legacy.css is a verbatim copy of the original stylesheet. If the two drift,
- * the React app quietly stops looking like the app it is replacing.
- */
-const sourceSheet = readFileSync("../legacy/styles.css", "utf8");
-const copiedSheet = readFileSync("./src/ui/legacy.css", "utf8");
-check(
-  "legacy.css sigue siendo copia fiel de styles.css",
-  sourceSheet === copiedSheet,
-  sourceSheet === copiedSheet ? `${sourceSheet.length} bytes iguales` : "las dos hojas divergieron",
-);
-
-/**
  * The address bar and the server have to agree on the section paths: if they
  * drift, reloading on a section serves a 404 instead of the app.
  */
 const appSource = readFileSync("./src/App.tsx", "utf8");
 const routes = [...appSource.matchAll(/^ {2}(\w+): "\/([a-z]+)",$/gm)].map((match) => match[2]);
-const serverBlock = readFileSync("../server.py", "utf8").match(/REACT_SECTION_PATHS = frozenset\(\{([^}]*)\}\)/);
+const serverBlock = readFileSync("../server/server.py", "utf8").match(/REACT_SECTION_PATHS = frozenset\(\{([^}]*)\}\)/);
 const serverRoutes = [...(serverBlock?.[1] ?? "").matchAll(/"([a-z]+)"/g)].map((match) => match[1]);
 const sameRoutes =
   routes.length > 0 && [...routes].sort().join(",") === [...serverRoutes].sort().join(",");

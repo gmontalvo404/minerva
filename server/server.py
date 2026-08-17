@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -47,13 +48,13 @@ def _data_root_from_env(default: Path) -> tuple[Path, str]:
 # on a Wi-Fi you trust.
 HOST = os.environ.get("MINERVA_HOST", "").strip() or "localhost"
 PORT = _port_from_env()
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 
 # Two datasets: your own data, which can live anywhere and is not in git, and
 # the demo one, which ships with the repo. The app picks between them with the
 # Live/Demo switch and asks for paths under one prefix or the other.
 DATA_URL_PREFIX = "finance/data"
-DEMO_URL_PREFIX = "finance/app/demo"
+DEMO_URL_PREFIX = "server/bundled/demo"
 FINANCE_DATA_ROOT, DATA_ROOT_WARNING = _data_root_from_env((ROOT / DATA_URL_PREFIX).resolve())
 DEMO_DATA_ROOT = (ROOT / DEMO_URL_PREFIX).resolve()
 
@@ -73,16 +74,11 @@ MONTH_FOLDERS = (
 )
 COINBASE_USD_RATE_ENDPOINT = "https://api.coinbase.com/v2/exchange-rates?currency=USD"
 DEV_STATIC_CACHE_EXTENSIONS = {".css", ".html", ".js"}
-LIVE_RELOAD_POLL_SECONDS = 0.5
-LIVE_RELOAD_WATCH_PATHS = (
-    ROOT / "legacy" / "index.html",
-    ROOT / "legacy" / "app.js",
-    ROOT / "legacy" / "styles.css",
-    ROOT / "server.py",
-)
 
 # One export at a time: several request threads can be saving at once.
 MOBILE_SNAPSHOT_LOCK = threading.Lock()
+# One data write at a time: POST handlers do read-modify-write on JSON files.
+DATA_WRITE_LOCK = threading.Lock()
 
 
 def resolve_dataset_path(relative_path: str) -> tuple[Path, Path]:
@@ -108,16 +104,34 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def live_reload_signature() -> str:
-    parts = []
-    for path in LIVE_RELOAD_WATCH_PATHS:
-        try:
-            stat = path.stat()
-        except FileNotFoundError:
-            parts.append(f"{path.name}:missing")
-        else:
-            parts.append(f"{path.name}:{stat.st_mtime_ns}:{stat.st_size}")
-    return "|".join(parts)
+def app_build_stamp() -> str:
+    """El mtime del build web: cuando se mueve, la pestaña abierta lo ve en
+    su sondeo y se recarga sola — nadie vuelve a refrescar a mano."""
+    try:
+        return str((ROOT / "web" / "dist" / "index.html").stat().st_mtime_ns)
+    except OSError:
+        return "0"
+
+
+def data_files_stamp() -> str:
+    """The newest mtime among the data files, as an opaque change marker.
+
+    The web app polls this to notice edits made from somewhere else — the
+    phone through the outbox, another tab. mobile/ stays out: commands and
+    the exported snapshot are consequences of a change, not the change.
+    """
+    newest = 0
+    for root in (FINANCE_DATA_ROOT, DEMO_DATA_ROOT):
+        if not root.exists():
+            continue
+        for path in root.rglob("*.json"):
+            if "mobile" in path.relative_to(root).parts:
+                continue
+            try:
+                newest = max(newest, path.stat().st_mtime_ns)
+            except OSError:
+                continue
+    return str(newest)
 
 
 class FinanceDataHandler(SimpleHTTPRequestHandler):
@@ -152,7 +166,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
     @staticmethod
     def _react_build_path(cleaned: str) -> str | None:
         """Where a React route or one of its assets lives, if the build exists."""
-        build = Path(__file__).resolve().parent / "web" / "dist"
+        build = ROOT / "web" / "dist"
         index = build / "index.html"
         if not index.exists():
             return None
@@ -190,23 +204,28 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             self._send_json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "Host desconocido"})
             return
         parsed_path = urlparse(self.path)
-        # The old app lives under legacy/ now; its old address keeps working,
-        # and a React section asked for before `web/dist` is built falls back
-        # there too. 302, not 308: where these point will keep changing.
+        # The React app is the only door. 302, not 308: where it points may
+        # keep changing.
         section = parsed_path.path.strip("/")
-        if (
-            parsed_path.path in {"/", "/index.html"}
-            or (section in REACT_SECTION_PATHS and self._react_build_path(section) is None)
-        ):
+        if parsed_path.path in {"/", "/index.html"}:
             self.send_response(HTTPStatus.FOUND)
-            self.send_header("Location", "/legacy/")
+            self.send_header("Location", "/cashflow")
             # HTTP/1.1 con keep-alive: sin esto, el cliente espera un cuerpo
             # que nunca llega (los navegadores lo toleran; curl se queda).
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        if parsed_path.path == "/api/dev/live-reload":
-            self._handle_live_reload()
+        if section in REACT_SECTION_PATHS and self._react_build_path(section) is None:
+            self._send_json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"ok": False, "error": "web/dist no existe: compila la web con `npm run build` en web/"},
+            )
+            return
+        if parsed_path.path == "/api/data/stamp":
+            self._send_json(
+                HTTPStatus.OK,
+                {"ok": True, "stamp": data_files_stamp(), "app": app_build_stamp()},
+            )
             return
         if parsed_path.path == "/api/fx/usd-cop":
             try:
@@ -217,6 +236,22 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         if parsed_path.path == "/api/mobile/export":
             self._export_mobile_snapshot()
             self._send_json(HTTPStatus.OK, {"ok": True})
+            return
+        if parsed_path.path == "/api/mobile/demo":
+            # El DemoSnapshot.json que viaja DENTRO de la app iOS, con la
+            # forma de MobileSnapshot. Para refrescarlo tras cambiar la data
+            # del demo: curl de esto a ios/Minerva/DemoSnapshot.json y
+            # recompilar la app — el demo empacado no se entera solo.
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "generated_at": utc_now_iso(),
+                    "years": [],
+                    "dashboards": {},
+                    "categories": self._shared_category_names(),
+                    "demo": self._snapshot_dataset(f"{DEMO_URL_PREFIX}/cash_flow"),
+                },
+            )
             return
         if parsed_path.path == "/api/dashboard":
             try:
@@ -260,42 +295,6 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
 
         super().do_GET()
 
-    def _handle_live_reload(self) -> None:
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self.end_headers()
-
-        last_signature = live_reload_signature()
-        last_heartbeat = time.monotonic()
-        try:
-            self._send_sse_event("ready", last_signature)
-
-            while True:
-                time.sleep(LIVE_RELOAD_POLL_SECONDS)
-                current_signature = live_reload_signature()
-                if current_signature != last_signature:
-                    last_signature = current_signature
-                    last_heartbeat = time.monotonic()
-                    self._send_sse_event("reload", current_signature)
-                    continue
-
-                if time.monotonic() - last_heartbeat >= 15:
-                    last_heartbeat = time.monotonic()
-                    self.wfile.write(b": keepalive\n\n")
-                    self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError):
-            return
-
-    def _send_sse_event(self, event: str, data: str) -> None:
-        try:
-            payload = f"event: {event}\ndata: {data}\n\n".encode("utf-8")
-            self.wfile.write(payload)
-            self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError):
-            raise
-
     @staticmethod
     def _should_disable_static_cache(path: str) -> bool:
         if path in {"", "/"}:
@@ -310,6 +309,9 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         if guard is not None:
             self._send_json(guard[0], {"ok": False, "error": guard[1]})
             return
+        # Una escritura a la vez: dos ediciones simultáneas (dos pestañas, la
+        # web y el buzón del teléfono) no se pisan la lectura-modificación.
+        DATA_WRITE_LOCK.acquire()
         try:
             if self.path == "/api/entries/active":
                 self._handle_update_active()
@@ -361,6 +363,8 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "File not found"})
         except Exception as error:  # noqa: BLE001
             self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(error)})
+        finally:
+            DATA_WRITE_LOCK.release()
 
     def _handle_get_usd_cop_rate(self) -> None:
         request = Request(
@@ -429,6 +433,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         relative_path = payload["path"]
         entry_index = int(payload["entry_index"])
         updates = payload["updates"]
+        origin = str(payload.get("origin") or "").strip() or "Mac"
         if not isinstance(updates, dict) or not updates:
             raise ValueError("Missing updates payload")
 
@@ -471,7 +476,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         )
 
         if changes:
-            self._apply_audit_update(updated_entry, changes)
+            self._apply_audit_update(updated_entry, changes, origin=origin)
 
         if not changes:
             response_path = relative_path
@@ -515,12 +520,31 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             },
         )
 
+    def _next_entry_id(self, relative_path: str) -> int:
+        """El siguiente id del dataset: el mayor existente + 1, contando
+        todos los archivos de outcomes. Los ids arrancan en 0 y nunca se
+        reutilizan; DATA_WRITE_LOCK serializa las creaciones."""
+        _target, root = resolve_dataset_path(relative_path)
+        highest = -1
+        for pattern in ("cash_flow/*/outcomes/*.json", "cash_flow/*/outcomes/*/*.json"):
+            for path in root.glob(pattern):
+                try:
+                    entries = json.loads(path.read_text(encoding="utf-8")).get("entries", [])
+                except (OSError, json.JSONDecodeError):
+                    continue
+                for entry in entries:
+                    candidate = entry.get("id") if isinstance(entry, dict) else None
+                    if isinstance(candidate, int) and candidate > highest:
+                        highest = candidate
+        return highest + 1
+
     def _handle_create_entry(self) -> None:
         payload = self._read_json_body()
         relative_path = payload["path"]
         entry_payload = payload["entry"]
         if not isinstance(entry_payload, dict):
             raise ValueError("Missing entry payload")
+        entry_payload["id"] = self._next_entry_id(relative_path)
 
         document, entries, target_path = self._load_entries(relative_path, create_if_missing=True)
         is_unified_outcomes = self._is_unified_outcomes_path(target_path)
@@ -923,12 +947,25 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         """How many categories the catalog has, which is what the KPI names."""
         # The catalog is not part of any dataset: it ships with the app.
         try:
-            path = Path(__file__).resolve().parent / "finance" / "app" / "shared" / "categories.json"
+            path = Path(__file__).resolve().parent / "bundled" / "shared" / "categories.json"
             document = json.loads(path.read_text(encoding="utf-8"))
         except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
             return 0
         categories = document.get("categories")
         return len(categories) if isinstance(categories, list) else 0
+
+    def _shared_category_names(self) -> list[str]:
+        """The catalog's names, for pickers that live off the snapshot."""
+        try:
+            path = Path(__file__).resolve().parent / "bundled" / "shared" / "categories.json"
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+            return []
+        categories = document.get("categories")
+        if not isinstance(categories, list):
+            return []
+        names = [str(item.get("name", "")).strip() for item in categories if isinstance(item, dict)]
+        return sorted(name for name in names if name)
 
     @staticmethod
     def _display_usd(value: float) -> float:
@@ -2818,7 +2855,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
 
         return changes
 
-    def _apply_audit_update(self, entry: dict, changes: dict) -> None:
+    def _apply_audit_update(self, entry: dict, changes: dict, origin: str = "Mac") -> None:
         timestamp = utc_now_iso()
         history = entry.get("history")
         if not isinstance(history, list):
@@ -2829,10 +2866,12 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             0,
             {
                 "changed_at": timestamp,
+                "changed_by": origin,
                 "changes": changes,
             },
         )
         entry["updated_at"] = timestamp
+        entry["updated_by"] = origin
 
     def _recompute_income_month(self, month_entry: dict) -> None:
         income_entries = self._ensure_income_month_entries(month_entry)
@@ -2927,29 +2966,73 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
     def _export_mobile_snapshot(self) -> None:
         """mobile/dashboard.json: every year precomputed, for the iOS app.
 
-        The phone reads this file straight from iCloud and does no math of its
-        own — the single-brain rule, minus the HTTP. A failed export must
+        The phone reads these files straight from iCloud and does no math of
+        its own — the single-brain rule, minus the HTTP. A failed export must
         never break the save that triggered it.
+
+        Partido por año: manifest.json (pequeño — años, categorías y el sello
+        de cada año) más dashboard-<año>.json. Cada archivo se reescribe solo
+        si su contenido real cambió, así una edición de un mes viaja por
+        iCloud como un solo año y el teléfono decodifica solo lo que mira.
+        El demo no viaja: va empacado dentro de la app.
         """
         try:
             live = self._snapshot_dataset(f"{DATA_URL_PREFIX}/cash_flow")
-            snapshot = {
-                "generated_at": utc_now_iso(),
-                # Live stays flat at the top: the app already installed reads
-                # it there. The demo rides along for showing the app around
-                # without showing the finances.
-                "years": live["years"],
-                "dashboards": live["dashboards"],
-                "demo": self._snapshot_dataset(f"{DEMO_URL_PREFIX}/cash_flow"),
-            }
-            target = FINANCE_DATA_ROOT / "mobile" / "dashboard.json"
+            # Sin parents: si la raíz de datos no existe (symlink roto), esto
+            # truena y NO fabrica una carpeta impostora con un snapshot vacío.
+            if not FINANCE_DATA_ROOT.exists():
+                raise FileNotFoundError(f"la carpeta de datos no existe: {FINANCE_DATA_ROOT}")
+            target_dir = FINANCE_DATA_ROOT / "mobile"
             with MOBILE_SNAPSHOT_LOCK:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                scratch = target.with_name("dashboard.json.tmp")
-                scratch.write_text(json.dumps(snapshot, ensure_ascii=False) + "\n", encoding="utf-8")
-                scratch.replace(target)  # atomic: iCloud never syncs it a medias
+                target_dir.mkdir(exist_ok=True)
+                # Espejo de la fuente: módulo → año, como cash_flow/<año>/ en
+                # los datos. Cuando iOS tenga más módulos, caerán al lado.
+                module_dir = target_dir / "cash_flow"
+                module_dir.mkdir(exist_ok=True)
+                stamp = utc_now_iso()
+                year_stamps = {
+                    year_key: self._write_if_changed(
+                        module_dir / f"{year_key}.json", dashboard, stamp
+                    )
+                    for year_key, dashboard in live["dashboards"].items()
+                }
+                manifest = {
+                    "years": live["years"],
+                    "categories": self._shared_category_names(),
+                    "year_stamps": year_stamps,
+                }
+                self._write_if_changed(target_dir / "manifest.json", manifest, stamp)
+                # Los formatos anteriores ya no se escriben; si queda alguno
+                # (el archivo único gordo, o el partido con nombre plano), fuera.
+                for stale in [target_dir / "dashboard.json", *target_dir.glob("dashboard-*.json")]:
+                    if stale.exists():
+                        stale.unlink()
         except Exception as error:  # noqa: BLE001
             print(f"No pude exportar el snapshot móvil: {error}", file=sys.stderr)
+
+    @staticmethod
+    def _write_if_changed(target: Path, payload: dict, stamp: str) -> str:
+        """Escribe {generated_at, content_hash, …payload} solo si el hash del
+        contenido cambió; devuelve el generated_at vigente del archivo, que es
+        el sello que el manifiesto anuncia y el teléfono compara."""
+        body = json.dumps(payload, ensure_ascii=False)
+        digest = hashlib.md5(body.encode("utf-8")).hexdigest()
+        if target.exists():
+            try:
+                head = target.read_text(encoding="utf-8")[:200]
+            except OSError:
+                head = ""
+            if f'"content_hash": "{digest}"' in head:
+                current = re.search(r'"generated_at": "([^"]+)"', head)
+                if current:
+                    return current.group(1)
+        scratch = target.with_name(target.name + ".tmp")
+        scratch.write_text(
+            '{"generated_at": ' + json.dumps(stamp) + ', "content_hash": "' + digest + '", ' + body[1:],
+            encoding="utf-8",
+        )
+        scratch.replace(target)  # atomic: iCloud never syncs it a medias
+        return stamp
 
     def _host_is_allowed(self) -> bool:
         """El Host contra la lista local: una página externa cuyo dominio
@@ -3107,6 +3190,181 @@ def open_in_browser(url: str) -> None:
     webbrowser.open(url, new=2, autoraise=True)
 
 
+def watch_outbox(host: str) -> None:
+    """El buzón del teléfono: la app de iOS deja comandos como archivos en
+    mobile/outbox/ (iCloud los trae), y este vigilante los aplica a través de
+    la propia API del servidor — misma validación, mismo historial, mismo
+    snapshot. Un solo cerebro sigue escribiendo los datos."""
+
+    def watch() -> None:
+        outbox = FINANCE_DATA_ROOT / "mobile" / "outbox"
+        while True:
+            time.sleep(3)
+            try:
+                pending = sorted(outbox.glob("*.json"))
+            except OSError:
+                continue
+            for command_path in pending:
+                apply_outbox_command(command_path, host)
+
+    threading.Thread(target=watch, daemon=True).start()
+
+
+def apply_outbox_command(command_path: Path, host: str) -> None:
+    try:
+        command = json.loads(command_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        reject_outbox_command(command_path, "ilegible")
+        return
+
+    action = command.get("action")
+    if action not in {"set_paid", "update_entry"}:
+        reject_outbox_command(command_path, f"acción desconocida: {action!r}")
+        return
+
+    relative_path = str(command.get("path", ""))
+    try:
+        target, _root = resolve_dataset_path(relative_path)
+        entries = json.loads(target.read_text(encoding="utf-8")).get("entries", [])
+    except Exception:  # noqa: BLE001 — cualquier falla = comando inválido
+        reject_outbox_command(command_path, "el archivo no existe")
+        return
+
+    # Primero por id permanente: encuentra el movimiento aunque la lista se
+    # haya reordenado. El índice + huella queda de respaldo para comandos de
+    # snapshots anteriores a los ids.
+    entry = None
+    index = None
+    entry_id = command.get("entry_id")
+    if entry_id is not None:
+        for position, candidate in enumerate(entries):
+            if isinstance(candidate, dict) and candidate.get("id") == entry_id:
+                entry, index = candidate, position
+                break
+        if entry is None:
+            reject_outbox_command(command_path, f"no hay movimiento con id {entry_id}")
+            return
+    else:
+        try:
+            index = int(command.get("entry_index"))
+            entry = entries[index]
+        except Exception:  # noqa: BLE001
+            reject_outbox_command(command_path, "el movimiento no existe")
+            return
+        if str(entry.get("description", "")) != str(command.get("description", "")):
+            reject_outbox_command(command_path, "el movimiento cambió de lugar")
+            return
+
+    if action == "set_paid":
+        # Idempotencia: si el movimiento ya está como el comando pide (doble
+        # toque, reintento tras un corte), se consume sin escribir ni ensuciar
+        # el historial.
+        desired = bool(command.get("paid"))
+        current = bool(entry.get("paid", entry.get("active", False)))
+        if current == desired:
+            print(f"Buzón: {command_path.name} ya estaba aplicado", file=sys.stderr)
+            try:
+                command_path.unlink()
+            except OSError:
+                pass
+            return
+        updates = {"paid": desired}
+    else:
+        # update_entry: el modal de edición del teléfono. Solo campos que el
+        # servidor sabe normalizar; la idempotencia la pone el endpoint, que
+        # ante un comando repetido no encuentra diferencias y no escribe.
+        updates = command.get("updates")
+        if not isinstance(updates, dict) or not updates:
+            reject_outbox_command(command_path, "comando sin updates")
+            return
+        unknown = sorted(set(updates) - {"description", "category", "amount_cop", "paid", "target_type"})
+        if unknown:
+            reject_outbox_command(command_path, f"campos no permitidos: {', '.join(unknown)}")
+            return
+
+    payload = json.dumps({
+        "path": relative_path,
+        "entry_index": index,
+        "updates": updates,
+        "origin": str(command.get("device") or "iPhone"),
+    }).encode("utf-8")
+    try:
+        urlopen(
+            Request(
+                f"http://{host}:{PORT}/api/entries/update",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+            ),
+            timeout=15,
+        ).read()
+    except OSError as error:
+        # El servidor aún no contesta o la escritura falló: se reintenta en
+        # el próximo ciclo, el comando se queda en el buzón.
+        print(f"Buzón: reintentaré {command_path.name}: {error}", file=sys.stderr)
+        return
+
+    try:
+        command_path.unlink()
+    except OSError:
+        pass
+
+
+def reject_outbox_command(command_path: Path, reason: str) -> None:
+    print(f"Buzón: rechazado {command_path.name}: {reason}", file=sys.stderr)
+    try:
+        command_path.rename(command_path.with_suffix(".rejected"))
+    except OSError:
+        pass
+
+
+def watch_self() -> None:
+    """Re-ejecutarse cuando cambia el propio fuente: guardar server.py es el
+    nuevo Recargar — el proceso se reemplaza solo, con el mismo pid, y el
+    launcher ni se entera.
+
+    Un archivo a medio guardar o roto nunca debe matar al servidor: la
+    versión nueva solo toma el mando cuando compila, y el relevo espera a
+    que termine cualquier escritura de datos en curso.
+    """
+    source = Path(__file__).resolve()
+
+    def watch() -> None:
+        try:
+            last = source.stat().st_mtime_ns
+        except OSError:
+            return
+        while True:
+            time.sleep(2)
+            try:
+                current = source.stat().st_mtime_ns
+            except OSError:
+                continue
+            if current == last:
+                continue
+            time.sleep(1)  # deja terminar un guardado por partes
+            try:
+                settled = source.stat().st_mtime_ns
+            except OSError:
+                continue
+            if settled != current:
+                last = current
+                continue
+            last = settled
+            check = subprocess.run(
+                [sys.executable, "-m", "py_compile", str(source)],
+                capture_output=True,
+            )
+            if check.returncode != 0:
+                print("server.py cambió pero no compila; sigo con la versión actual.", file=sys.stderr)
+                continue
+            print("server.py cambió: me reinicio con el código nuevo.", file=sys.stderr)
+            sys.stderr.flush()
+            with DATA_WRITE_LOCK:
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+
+    threading.Thread(target=watch, daemon=True).start()
+
+
 def watch_parent() -> None:
     """Exit when the launcher that started us dies, however it died.
 
@@ -3198,7 +3456,14 @@ def main() -> None:
             print(f"En tu red local: http://{lan}:{PORT}  (la dirección para el iPhone)")
     if DATA_ROOT_WARNING:
         print(DATA_ROOT_WARNING, file=sys.stderr)
+    if not (FINANCE_DATA_ROOT / "cash_flow").exists():
+        print(
+            f"⚠️  {FINANCE_DATA_ROOT} no tiene cash_flow — ¿symlink de finance/data roto?",
+            file=sys.stderr,
+        )
     watch_parent()
+    watch_outbox(browse_host)
+    watch_self()
     nudge_icloud_data()
     threading.Thread(target=request_startup_export, args=(browse_host,), daemon=True).start()
     open_in_browser(f"http://{browse_host}:{PORT}")

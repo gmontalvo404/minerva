@@ -1,169 +1,148 @@
 # Minerva
 
-Minerva is a local personal finance dashboard. It reads JSON data from `finance/data/cash_flow` and `finance/data/debts`, calculates annual and monthly summaries, and lets you edit incomes, expenses, and debts from a web interface without a database or required external services.
-
-The app is designed for budgeting in COP and USD, reviewing expense distribution, switching between annual and monthly views, and keeping a simple change history for each movement.
-
-## Features
-
-- Annual dashboard with KPIs, monthly free cash flow, expense distribution by type, and comparison table.
-- Monthly view with incomes, expenses, categories, budget summary, and detailed movements.
-- Local data editing: create, update, mark as paid/received, delete, and reorder incomes or expenses.
-- Change history per movement through `created_at`, `updated_at`, and `history`.
-- English and Spanish UI support.
-- Light/dark theme with preferences saved in `localStorage`.
-- Data refresh after edits and when returning to the browser tab.
-- Optional USD/COP rate lookup through Coinbase from `/api/fx/usd-cop`.
+Minerva is a local-first personal finance suite — with a meal planner riding
+along. A single Python server owns the data and **every money calculation**;
+thin clients only paint what it answers: a React web app, an iOS app, and the
+original dashboard it is replacing. No database, no accounts, no third-party
+services — the data is JSON files in your own iCloud Drive, and nothing of it
+ever enters this repository.
 
 ## Screenshots
 
-Annual dashboard with demo data:
+The React app, on the demo dataset:
 
-![Minerva annual dashboard with demo data](docs/screenshots/minerva-demo-annual-dashboard.png)
+![Annual summary, light theme](docs/screenshots/minerva-react-annual-light.png)
 
-Monthly dashboard with demo data:
+![Annual summary, dark theme](docs/screenshots/minerva-react-annual-dark.png)
 
-![Minerva monthly dashboard with demo data](docs/screenshots/minerva-demo-monthly-dashboard.png)
+![Meal plan](docs/screenshots/minerva-react-nutrition.png)
 
-Dark mode with demo data:
+The iOS app — the entry with its two doors, and the demo session:
 
-![Minerva dark mode dashboard with demo data](docs/screenshots/minerva-demo-dark-dashboard.png)
+<p>
+  <img src="docs/screenshots/minerva-ios-entry.png" width="320" alt="iOS entry: log in with Face ID or open the demo" />
+  <img src="docs/screenshots/minerva-ios-home-demo.png" width="320" alt="iOS home in demo mode" />
+</p>
 
-## Stack
+## The one rule
 
-- Frontend: HTML, CSS, and JavaScript without a framework.
-- Local backend: Python `http.server` with custom JSON endpoints.
-- Persistence: JSON files inside `finance/data/cash_flow` and `finance/data/debts`.
-- Build: no build step and no npm dependencies.
+All business logic lives in `server/server.py`. The clients never do money math —
+they render what the API answers, so two dashboards can never disagree on a
+number. The iOS app takes this further: it does not even talk HTTP. On each
+save the server precomputes the dashboard into `mobile/manifest.json` (a tiny
+index: years, categories, one stamp per year) plus one `mobile/cash_flow/<year>.json`
+per year — mirroring how the source data is organized — rewriting only the
+files whose content actually changed. iCloud syncs them, and the phone reads
+the manifest and decodes only the year on screen — anywhere, without the Mac
+awake.
+
+## What's inside
+
+- **Cash flow**: annual and monthly views, incomes and expenses in COP/USD,
+  paid/received tracking, budget summary, and a change history per movement.
+- **Debts**: payment plan with drag-to-reorder, per-debt schedule detail, and
+  links between debts and the cash flow entries that pay them.
+- **Credit simulator**: full amortization preview; a simulation can be saved
+  as a debt.
+- **Meal plan**: meal catalog, weekly schedule with a randomizer, ingredient
+  labels with a validated color palette, per-category exclusions, and a
+  shopping list priced from the ingredient catalog.
+- **Live / Demo** switch on every client, English/Spanish, light/dark themes.
+- **Concurrency guard**: nutrition saves carry a content hash; a stale tab
+  gets a 409 instead of silently overwriting the file.
+- **Request guards**: every request must carry a local `Host` (kills DNS
+  rebinding) and writes must carry a local `Origin` plus
+  `Content-Type: application/json` (kills CSRF).
+
+## The clients
+
+- **`web/` — the React app** (React 19, Vite, TypeScript). The primary UI.
+  Served by the Python server at `/cashflow`, `/debts`, `/credit` and
+  `/nutrition` when `web/dist` exists; `web/src/ui/legacy.css` is the
+  stylesheet it inherited from the original vanilla dashboard it replaced.
+- **`ios/` — the iOS app** (SwiftUI). A viewer: entry with **Face ID only**
+  (biometrics, no passcode fallback) for the real data, or the public demo
+  without a session. Reads the iCloud snapshot and silently re-reads it every
+  20 seconds. Built with xcodegen + Xcode — see `ios/README.md`.
+- **`desktop/` — the macOS launcher**. Starts and stops the server without a
+  terminal, behind a Touch ID gate. Opens the React app in your browser,
+  reusing the Minerva tab you already have (Safari and Chromium browsers),
+  and can run the Vite dev server while both web versions coexist.
 
 ## Structure
 
 ```text
 .
-+-- legacy
-|   +-- index.html
-|   +-- styles.css
-|   `-- app.js
-+-- web
-+-- server.py
-+-- desktop
++-- web                  <- the React app (Vite + TypeScript)
++-- ios                  <- the iOS app (SwiftUI, xcodegen)
++-- desktop              <- macOS launcher (Swift, build.sh)
++-- server               <- the only brain
+|   +-- server.py        <- data, money math, endpoints
+|   `-- bundled          <- ships with the repo:
+|       +-- shared       <- category, type and currency catalogs
+|       `-- demo         <- the Demo dataset (cash_flow, debts, nutrition)
++-- docs                 <- screenshots
 `-- finance
-    +-- app                  <- ships with the repo
-    |   +-- shared
-    |   |   +-- categories.json
-    |   |   +-- currencies.json
-    |   |   `-- types.json
-    |   +-- images
-    |   `-- demo             <- the Demo dataset
-    |       +-- cash_flow
-    |       +-- debts
-    |       `-- nutrition
-    `-- data                 <- your own data, ignored by git
-        +-- cash_flow
-        |   +-- 2026
-        |   `-- 2027
-        +-- debts
-        `-- nutrition
+    `-- data             <- your own data: a symlink into iCloud Drive,
+                            ignored by git (see Data)
 ```
 
-Main files:
+## Run
 
-- `legacy/index.html`: interface markup.
-- `legacy/styles.css`: styling, responsive layout, and themes.
-- `legacy/app.js`: data loading, rendering, interactions, and backend calls.
-- `web`: the React rewrite, served on the same port when built.
-- `server.py`: local server, the money math, write endpoints, and USD/COP rate proxy.
-- `desktop`: macOS launcher app to start and stop the server without a terminal.
-- `finance/app/shared`: shared category, type, and currency catalogs.
-- `finance/app/demo`: the sample dataset behind the Demo switch.
-- `finance/data`: your own data — cash flow by year, debts, and the meal plan.
-  Since 2026-08 it is a symlink into iCloud Drive (`Minerva/data`), so the
-  files are backed up, versioned, and readable by the iOS app anywhere.
-  It is ignored by git and can live anywhere (see below).
-
-## Requirements
-
-- Python 3.10 or newer.
-- Firefox (preferred) or any modern browser. Make sure hardware acceleration is
-  on in the browser settings, otherwise the dashboard scrolls and animates
-  sluggishly.
-- Internet access only if you want to use the live USD/COP rate.
-
-## Run Locally
-
-From the project root:
+The server:
 
 ```bash
-python3 server.py
+python3 server/server.py
 ```
 
-The server will be available at:
+It serves everything on `http://localhost:8123` (`MINERVA_PORT` changes the
+port) and opens Firefox, falling back to Chrome and then the system default —
+`MINERVA_BROWSER=chrome`, `=default` or `=none` override that.
 
-```text
-http://localhost:8123
-```
-
-`server.py` opens Firefox automatically, falling back to Chrome and then to the system default browser. Set `MINERVA_BROWSER=chrome` (or `=default`) to override that for a single run:
+The macOS launcher, if you would rather not use a terminal:
 
 ```bash
-MINERVA_BROWSER=chrome python3 server.py
+./desktop/build.sh    # -> ~/Applications/Minerva.app
 ```
 
-To stop the server, press `Ctrl+C` in the terminal.
-
-## Desktop App (macOS)
-
-If you would rather not use a terminal, build the launcher app once:
+The React app is pre-built into `web/dist` and served by the same Python
+process. To develop it:
 
 ```bash
-./desktop/build.sh
+cd web
+npm install
+npm run dev      # Vite on :5173, /api and /finance proxied to the server
+npm run build    # refresh web/dist, what the server serves
+npm run smoke    # the checks below
 ```
 
-That leaves `Minerva.app` in `~/Applications`, ready for the Dock or Spotlight.
-Opening it turns the server on and shows the dashboard in the browser you pick;
-it also reloads the server, changes the port, and shows the server log. See
-`desktop/README.md`.
-
-The port is `8123` unless `MINERVA_PORT` says otherwise, which is how the app
-changes it:
-
-```bash
-MINERVA_PORT=8125 python3 server.py
-```
-
-The old app answers at `/legacy/`, and `/` redirects there. Opening `legacy/index.html` straight from disk does not work: the app needs to be served over HTTP to load JSON with `fetch` and to save changes through the local endpoints.
+The iOS app needs Xcode and ten minutes: `ios/README.md` walks through it.
 
 ## Data
 
-There are two datasets, and the **Live / Demo** switch in the header picks which
-one everything reads and writes:
+Your data lives in `finance/data` — which since 2026-08 is a **symlink into
+iCloud Drive** (`iCloud Drive/Minerva/data`): backed up, versioned, synced to
+the phone, and still completely outside git. `MINERVA_DATA_ROOT` points the
+server anywhere else if you prefer plain local files; the desktop app has a
+folder picker for the same thing.
 
-- **Live** is your own data in `finance/data`. It is ignored by git, and
-  `MINERVA_DATA_ROOT` moves it anywhere on disk:
+Two datasets, chosen with the **Live / Demo** switch (or the two doors of the
+iOS entry): **Live** is `finance/data`; **Demo** is `server/bundled/demo`, ships
+with the repo, and is an editable sandbox.
 
-  ```bash
-  MINERVA_DATA_ROOT=~/Documents/minerva-data python3 server.py
-  ```
+The server also maintains `finance/data/mobile/` — `manifest.json` plus one
+precomputed `cash_flow/<year>.json` per year, for the iOS app — refreshed on
+every save and at boot, touching only the files whose content changed. The
+demo doesn't travel through iCloud: it ships bundled inside the app.
 
-  The desktop app has a folder picker for the same thing. If you have no data
-  yet, start on Demo.
-
-- **Demo** is the sample dataset in `finance/app/demo`, which ships with the
-  repo and is safe to publish. It is editable — a sandbox to try things out —
-  so remember that changes there do show up in `git status`.
-
-Inside either one, the app discovers the folders in `cash_flow` on its own. Each
-folder is a year, such as `2026` or `2027`.
+Inside either dataset the app discovers the year folders in `cash_flow` on its
+own (`2026`, `2027`, …).
 
 ### Incomes
-
-Incomes live in:
 
 ```text
 finance/data/cash_flow/<year>/incomes/incomes.json
 ```
-
-Expected format:
 
 ```json
 {
@@ -191,13 +170,12 @@ Expected format:
 }
 ```
 
-When incomes are edited from the interface, the server recalculates `income_usd`, `income_cop`, and `usd_cop` for the month using entries marked as received.
+When incomes are edited from a client, the server recalculates the month's
+`income_usd`, `income_cop` and `usd_cop` from the entries marked as received.
 
 ### Expenses
 
-The recommended format is one unified file per month.
-
-Unified monthly format:
+One unified file per month:
 
 ```text
 finance/data/cash_flow/<year>/outcomes/01-january.json
@@ -220,111 +198,80 @@ finance/data/cash_flow/<year>/outcomes/01-january.json
 }
 ```
 
-The app can still read the legacy format separated by type, but new data should use the unified monthly format:
-
-```text
-finance/data/cash_flow/<year>/outcomes/01-january/needs.json
-finance/data/cash_flow/<year>/outcomes/01-january/wants.json
-finance/data/cash_flow/<year>/outcomes/01-january/savings.json
-finance/data/cash_flow/<year>/outcomes/01-january/debts.json
-```
-
-```json
-{
-  "entries": [
-    {
-      "paid": true,
-      "description": "Groceries",
-      "category": "Market",
-      "amount_cop": 290000,
-      "created_at": "2026-04-15T15:21:01.000Z",
-      "updated_at": "2026-04-15T15:21:01.000Z",
-      "history": []
-    }
-  ]
-}
-```
-
-Valid types:
-
-- `needs`
-- `wants`
-- `savings`
-- `debts`
+Valid types: `needs`, `wants`, `savings`, `debts`. The server still reads the
+legacy format split by type (`01-january/needs.json`, …), and still accepts
+the old `active` flag, but current data should use `paid` for expenses and
+`received` for incomes.
 
 ### Debts
-
-Debts live in:
 
 ```text
 finance/data/debts/debts.json
 ```
 
-The debts view edits this file through `POST /api/debts/update`.
+### Meal plan
 
-## Create a New Year
+```text
+finance/data/nutrition/plan.json
+```
 
-1. Create a folder in `finance/data/cash_flow`, for example:
+Ingredients can carry several labels (`"category": ["Granos", "Carbohidratos"]`).
 
-   ```text
-   finance/data/cash_flow/2028
-   ```
+### A new year
 
-2. Add incomes:
+Create `finance/data/cash_flow/<year>/` with its `incomes/` and `outcomes/`,
+and refresh — the year appears in the selector.
 
-   ```text
-   finance/data/cash_flow/2028/incomes/incomes.json
-   ```
+## Endpoints
 
-3. Add expenses using either the unified format or the format separated by type.
+Reads:
 
-4. Restart or refresh the app. The new year will appear in the selector if the folder is available from the local server.
+- `GET /api/dashboard`: a year of cash flow, aggregated — months, totals,
+  categories. What every dashboard paints.
+- `GET /api/debts/detail`, `/api/debts/links`, `/api/debts/simulate`
+- `GET /api/nutrition/shopping`: the week's list, priced.
+- `GET /api/fx/usd-cop`: USD/COP rate via Coinbase.
+- `GET /api/mobile/export`: force a snapshot refresh (also automatic).
+- `GET /api/dev/live-reload`: dev auto-reload stream.
 
-You can use `finance/app/demo/cash_flow/demo` as a reference dataset, or just
-flip the switch to Demo and look at it in the app.
+Writes (all POST, all guarded by Origin + Content-Type):
 
-## Local Endpoints
+- `/api/entries/create | update | delete | reorder | active`
+- `/api/incomes/create | update | delete | reorder`
+- `/api/debts/create | update | reorder`
+- `/api/nutrition/save` — carries a `base_hash`; a mismatch answers 409 and
+  the client reloads instead of overwriting.
 
-The server exposes endpoints used by `app.js`:
+The server only writes `.json` files inside the data roots.
 
-- `GET /api/fx/usd-cop`: gets the USD/COP rate from Coinbase.
-- `POST /api/entries/create`: creates an expense.
-- `POST /api/entries/update`: updates an expense.
-- `POST /api/entries/delete`: deletes an expense.
-- `POST /api/entries/reorder`: reorders expenses.
-- `POST /api/entries/active`: legacy endpoint that changes the paid flag of an expense.
-- `POST /api/incomes/create`: creates an income.
-- `POST /api/incomes/update`: updates an income.
-- `POST /api/incomes/delete`: deletes an income.
-- `POST /api/incomes/reorder`: reorders incomes.
-- `POST /api/debts/update`: updates a debt.
-- `POST /api/nutrition/save`: saves the whole meal plan document to `finance/data/nutrition/plan.json`.
+## Security and privacy
 
-The app still accepts the legacy `active` flag when reading old data or payloads, but current JSON should use `paid` for expenses and `received` for incomes.
-
-For safety, `server.py` only allows writes to `.json` files inside `finance/data`.
-
-## Privacy
-
-Financial data is stored in local files. The current `.gitignore` excludes the
-whole `finance/data` folder, so nothing of yours is ever staged; what ships is
-the sample dataset in `finance/app/demo`.
-
-Before sharing the project, verify that you are not including real financial information in the JSON files.
+- The server binds `localhost` only. `MINERVA_HOST=0.0.0.0` opens it to your
+  local network — it prints the address to type into a phone — but there is
+  **no authentication**: use it only on a network you trust, and prefer the
+  iOS snapshot flow, which needs no open port at all.
+- Every request is checked against a local-host allowlist, and writes against
+  a local-origin allowlist plus a JSON content type.
+- `finance/data` (the symlink and everything behind it) and `.ai/` are
+  gitignored; what ships is the demo dataset. Before publishing changes,
+  check you are not committing real financial information.
+- On iOS the real data sits behind Face ID with no passcode fallback, the
+  session closes when the app backgrounds, and the task switcher never shows
+  real figures.
 
 ## Development
 
-There are no automated tests or build pipeline configured. For basic validation:
-
 ```bash
-python3 -m py_compile server.py
-python3 server.py
+python3 -m py_compile server.py    # server syntax
+cd web && npm run smoke            # the React app's checks
 ```
 
-Then open `http://localhost:8123` and verify:
+The smoke script verifies, among other things: that no client module contains
+money arithmetic, that `legacy.css` is still a verbatim copy of `styles.css`,
+that every CSS class the React app emits exists in the original stylesheet,
+that both apps persist the same preference keys, and that client and server
+agree on the routes. For the iOS app:
 
-- Initial data loading.
-- Switching between years or datasets.
-- Annual and monthly views.
-- Creating, editing, deleting, and reordering movements.
-- JSON persistence after changes.
+```bash
+cd ios && xcodegen generate        # regenerate the Xcode project
+```

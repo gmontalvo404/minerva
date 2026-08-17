@@ -3,70 +3,38 @@
     {
       "description": "Room rent",
       "category": "Housing",
-      "amount_cop": 680000,
-      "created_at": "2026-04-14T16:50:38.492Z",
-      "updated_at": "2026-04-18T21:37:02.474Z",
-      "history": [
-        {
-          "changed_at": "2026-04-18T21:37:02.474Z",
-          "changes": {
-            "paid": {
-              "from": false,
-              "to": true
-            }
-          }
-        },
-        {
-          "changed_at": "2026-04-18T21:36:54.032Z",
-          "changes": {
-            "paid": {
-              "from": true,
-              "to": false
-            }
-          }
-        }
-      ],
-      "type": "needs",
-      "paid": true
-    },
-    {
-      "description": "Groceries",
-      "category": "Market",
-      "amount_cop": 295000,
+      "amount_cop": 720000,
       "created_at": "2026-04-14T16:50:38.492Z",
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "needs",
-      "paid": true
+      "paid": true,
+      "id": 62,
+      "updated_by": "Mac"
+    },
+    {
+      "description": "Groceries",
+      "category": "Market",
+      "amount_cop": 310000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "needs",
+      "paid": true,
+      "id": 63,
+      "updated_by": "Mac"
     },
     {
       "description": "Transport card",
       "category": "Cash",
-      "amount_cop": 175000,
+      "amount_cop": 190000,
       "created_at": "2026-04-14T16:50:38.492Z",
-      "updated_at": "2026-04-18T21:37:03.222Z",
-      "history": [
-        {
-          "changed_at": "2026-04-18T21:37:03.222Z",
-          "changes": {
-            "paid": {
-              "from": false,
-              "to": true
-            }
-          }
-        },
-        {
-          "changed_at": "2026-04-18T21:36:54.897Z",
-          "changes": {
-            "paid": {
-              "from": true,
-              "to": false
-            }
-          }
-        }
-      ],
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
       "type": "needs",
-      "paid": true
+      "paid": true,
+      "id": 64,
+      "updated_by": "Mac"
     },
     {
       "description": "Cellphone plan",
@@ -76,27 +44,33 @@
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "needs",
-      "paid": true
+      "paid": true,
+      "id": 65,
+      "updated_by": "Mac"
     },
     {
       "description": "Utilities share",
       "category": "Housing",
-      "amount_cop": 85000,
+      "amount_cop": 95000,
       "created_at": "2026-04-14T16:50:38.492Z",
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "needs",
-      "paid": true
+      "paid": true,
+      "id": 66,
+      "updated_by": "Mac"
     },
     {
       "description": "Personal care",
       "category": "Personal care",
-      "amount_cop": 40000,
+      "amount_cop": 45000,
       "created_at": "2026-04-14T16:50:38.492Z",
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "needs",
-      "paid": true
+      "paid": true,
+      "id": 67,
+      "updated_by": "Mac"
     },
     {
       "description": "Pharmacy / clinic",
@@ -106,7 +80,9 @@
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "needs",
-      "paid": true
+      "paid": true,
+      "id": 68,
+      "updated_by": "Mac"
     },
     {
       "description": "Streaming apps",
@@ -116,7 +92,9 @@
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "wants",
-      "paid": true
+      "paid": true,
+      "id": 69,
+      "updated_by": "Mac"
     },
     {
       "description": "Gym membership",
@@ -126,47 +104,57 @@
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "wants",
-      "paid": true
+      "paid": true,
+      "id": 70,
+      "updated_by": "Mac"
     },
     {
       "description": "Coffee and going out",
       "category": "Restaurant",
-      "amount_cop": 90000,
+      "amount_cop": 95000,
       "created_at": "2026-04-14T16:50:38.492Z",
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "wants",
-      "paid": true
+      "paid": true,
+      "id": 71,
+      "updated_by": "Mac"
     },
     {
       "description": "Birthday / family gift",
       "category": "Family",
-      "amount_cop": 30000,
+      "amount_cop": 25000,
       "created_at": "2026-04-14T16:50:38.492Z",
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "wants",
-      "paid": true
+      "paid": true,
+      "id": 72,
+      "updated_by": "Mac"
     },
     {
       "description": "Emergency fund",
       "category": "Emergency fund",
-      "amount_cop": 80000,
+      "amount_cop": 70000,
       "created_at": "2026-04-14T16:50:38.492Z",
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "savings",
-      "paid": true
+      "paid": true,
+      "id": 73,
+      "updated_by": "Mac"
     },
     {
       "description": "Phone installment",
       "category": "Debt",
-      "amount_cop": 120000,
+      "amount_cop": 100000,
       "created_at": "2026-04-14T16:50:38.492Z",
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "debts",
-      "paid": true
+      "paid": true,
+      "id": 74,
+      "updated_by": "Mac"
     }
   ]
 }

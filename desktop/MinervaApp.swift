@@ -1,9 +1,9 @@
 // Minerva — desktop launcher.
 //
 // A small native app to turn the local server on and off and to open the
-// dashboard in the browser you pick. It runs `python3 server.py` from the
-// project folder as a child process; the folder is stamped into Info.plist by
-// build.sh and can be re-pointed from the app if the repo ever moves.
+// dashboard in the browser you pick. It runs `python3 server/server.py` from
+// the project folder as a child process; the folder is stamped into Info.plist
+// by build.sh and can be re-pointed from the app if the repo ever moves.
 
 import AppKit
 import LocalAuthentication
@@ -46,7 +46,7 @@ enum Config {
     }
 
     static func hasServer(_ path: String) -> Bool {
-        !path.isEmpty && FileManager.default.fileExists(atPath: path + "/server.py")
+        !path.isEmpty && FileManager.default.fileExists(atPath: path + "/server/server.py")
     }
 }
 
@@ -460,7 +460,7 @@ final class ServerModel: ObservableObject {
         errorMessage = nil
 
         guard projectIsValid else {
-            errorMessage = "No encuentro server.py en \(projectPath.isEmpty ? "la carpeta del proyecto" : projectPath)."
+            errorMessage = "No encuentro server/server.py en \(projectPath.isEmpty ? "la carpeta del proyecto" : projectPath)."
             return
         }
         guard portIsValid else {
@@ -500,7 +500,7 @@ final class ServerModel: ObservableObject {
 
         let task = Process()
         task.executableURL = URL(fileURLWithPath: python)
-        task.arguments = ["server.py"]
+        task.arguments = ["server/server.py"]
         task.currentDirectoryURL = URL(fileURLWithPath: projectPath)
 
         var environment = ProcessInfo.processInfo.environment
@@ -653,8 +653,7 @@ final class ServerModel: ObservableObject {
     }
 
     /// What Abrir opens: the React dev server when it is up, else the built
-    /// React app on the Python server. The old app is never the door — it
-    /// stays reachable at /legacy/ for whoever types it.
+    /// React app on the Python server.
     var openTarget: URL {
         if runReact && isPortListening(Config.reactPort) {
             return Config.reactURL
@@ -801,7 +800,7 @@ final class ServerModel: ObservableObject {
     var hiddenLogCount: Int { log.count - visibleLog.count }
 
     /// A request the server answered fine, e.g.
-    /// `127.0.0.1 - - [01/Aug/2026 21:40:02] "GET /legacy/app.js HTTP/1.1" 200 -`.
+    /// `127.0.0.1 - - [01/Aug/2026 21:40:02] "GET /assets/index-B3zBK5X0.js HTTP/1.1" 200 -`.
     /// Errors (404, 500…) are never hidden: those are worth reading.
     static func isServedRequest(_ line: String) -> Bool {
         guard line.contains("HTTP/1."), let quote = line.range(of: "\" ", options: .backwards) else {

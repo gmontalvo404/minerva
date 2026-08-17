@@ -7,5 +7,5 @@ scripts/
 # The demo dataset in finance/app ships with the repo.
 /finance/data
 
-# The security audit maps where the sensitive spots are: never commit it.
-/security-review.md
+# Working notes for/by AI sessions (audits, plans): local only, never committed.
+/.ai/

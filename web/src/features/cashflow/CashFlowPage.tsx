@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getDebtsDetail, getJson } from "../../lib/api";
-import type { DebtDetail } from "../../lib/api";
+import { getDataStamp, getDebtsDetail, getJson } from "../../lib/api";
+import type { DataStamp, DebtDetail } from "../../lib/api";
 import { cashFlowRoot, debtsPath, SHARED_ROOT } from "../../lib/dataset";
 import type { Dataset } from "../../lib/dataset";
 import {
@@ -127,29 +127,70 @@ export function CashFlowPage({ dataset, language, onSidebar }: CashFlowPageProps
   const [incomeHistory, setIncomeHistory] = useState<IncomeEntry | null>(null);
 
   // One request brings the years, the chosen year and its aggregates, so the
-  // dataset and the year can never be out of step.
-  const reload = useCallback(async () => {
-    setLoading(true);
-    try {
-      const requested = yearOwner.current === dataset ? year : readStorage(yearKey(dataset));
-      const result = await loadDashboard(dataset, requested, language);
-      setDiscovery({ dataset, years: result.years });
-      yearOwner.current = dataset;
-      setYear(result.year || null);
-      if (result.year) writeStorage(yearKey(dataset), result.year);
-      setSummary(result.summary);
-      setDebts(await getDebtsDetail(debtsPath(dataset)).catch(() => []));
-    } catch {
-      setSummary(null);
-      setStatus(t("load_error_title"));
-    } finally {
-      setLoading(false);
-    }
-  }, [dataset, year, language, t]);
+  // dataset and the year can never be out of step. A silent load repaints
+  // without the spinner, and if it fails it keeps what is already on screen.
+  const load = useCallback(
+    async (silent: boolean) => {
+      if (!silent) setLoading(true);
+      try {
+        const requested = yearOwner.current === dataset ? year : readStorage(yearKey(dataset));
+        const result = await loadDashboard(dataset, requested, language);
+        setDiscovery({ dataset, years: result.years });
+        yearOwner.current = dataset;
+        setYear(result.year || null);
+        if (result.year) writeStorage(yearKey(dataset), result.year);
+        setSummary(result.summary);
+        setDebts(await getDebtsDetail(debtsPath(dataset)).catch(() => []));
+      } catch {
+        if (silent) return;
+        setSummary(null);
+        setStatus(t("load_error_title"));
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [dataset, year, language, t],
+  );
+  const reload = useCallback(() => load(false), [load]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // The data can change underneath this tab: the iPhone through the outbox,
+  // another tab beside it. Poll the cheap stamp and re-read silently when it
+  // moves — never mid-typing, and not while the tab is hidden.
+  useEffect(() => {
+    let last: DataStamp | null = null;
+    let alive = true;
+    const tick = async () => {
+      if (document.hidden) return;
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLInputElement ||
+        active instanceof HTMLTextAreaElement ||
+        active instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+      const stamp = await getDataStamp();
+      if (!alive || stamp === null) return;
+      if (last !== null && stamp.app !== last.app) {
+        // Llegó un build nuevo del front: la pestaña se renueva sola.
+        window.location.reload();
+        return;
+      }
+      if (last !== null && stamp.data !== last.data) void load(true);
+      last = stamp;
+    };
+    const interval = window.setInterval(() => void tick(), 4000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      alive = false;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [load]);
 
   const years = discovery?.dataset === dataset ? discovery.years : [];
 

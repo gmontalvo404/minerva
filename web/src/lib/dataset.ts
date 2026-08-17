@@ -10,11 +10,11 @@ export const DEFAULT_DATASET: Dataset = "live";
 
 const ROOTS: Record<Dataset, string> = {
   live: "finance/data",
-  demo: "finance/app/demo",
+  demo: "server/bundled/demo",
 };
 
 /** Catalogs shared by both datasets. */
-export const SHARED_ROOT = "finance/app/shared";
+export const SHARED_ROOT = "server/bundled/shared";
 
 export function normalizeDataset(value: unknown): Dataset {
   const dataset = String(value ?? "").trim().toLowerCase();

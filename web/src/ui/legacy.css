@@ -3562,7 +3562,7 @@ tbody tr[data-debt-row="true"].is-drop-after td {
 
 .history-item__row {
   display: grid;
-  grid-template-columns: 150px minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 150px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.7fr);
   gap: 10px;
   align-items: start;
   padding: 8px 0;

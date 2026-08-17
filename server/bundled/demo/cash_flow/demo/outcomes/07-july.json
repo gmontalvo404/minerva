@@ -9,6 +9,7 @@
       "history": [
         {
           "changed_at": "2026-04-15T00:50:12.892Z",
+          "changed_by": "Mac",
           "changes": {
             "amount_cop": {
               "from": 306000,
@@ -18,6 +19,7 @@
         },
         {
           "changed_at": "2026-04-15T00:49:33.364Z",
+          "changed_by": "Mac",
           "changes": {
             "amount_cop": {
               "from": 305000,
@@ -27,6 +29,7 @@
         },
         {
           "changed_at": "2026-04-15T00:49:30.632Z",
+          "changed_by": "Mac",
           "changes": {
             "category": {
               "from": "Market",
@@ -36,7 +39,9 @@
         }
       ],
       "type": "needs",
-      "paid": true
+      "paid": true,
+      "id": 75,
+      "updated_by": "Mac"
     },
     {
       "description": "Transport card",
@@ -46,7 +51,9 @@
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "needs",
-      "paid": true
+      "paid": true,
+      "id": 76,
+      "updated_by": "Mac"
     },
     {
       "description": "Cellphone plan",
@@ -56,7 +63,9 @@
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "needs",
-      "paid": true
+      "paid": true,
+      "id": 77,
+      "updated_by": "Mac"
     },
     {
       "description": "Utilities share",
@@ -66,7 +75,9 @@
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "needs",
-      "paid": true
+      "paid": true,
+      "id": 78,
+      "updated_by": "Mac"
     },
     {
       "description": "Personal care",
@@ -76,7 +87,9 @@
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "needs",
-      "paid": true
+      "paid": true,
+      "id": 79,
+      "updated_by": "Mac"
     },
     {
       "description": "Pharmacy / clinic",
@@ -86,7 +99,9 @@
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "needs",
-      "paid": true
+      "paid": true,
+      "id": 80,
+      "updated_by": "Mac"
     },
     {
       "description": "Room rent",
@@ -97,6 +112,7 @@
       "history": [
         {
           "changed_at": "2026-04-15T00:51:51.213Z",
+          "changed_by": "Mac",
           "changes": {
             "paid": {
               "from": false,
@@ -106,6 +122,7 @@
         },
         {
           "changed_at": "2026-04-15T00:51:50.584Z",
+          "changed_by": "Mac",
           "changes": {
             "paid": {
               "from": true,
@@ -115,6 +132,7 @@
         },
         {
           "changed_at": "2026-04-15T00:51:45.247Z",
+          "changed_by": "Mac",
           "changes": {
             "paid": {
               "from": false,
@@ -124,6 +142,7 @@
         },
         {
           "changed_at": "2026-04-15T00:51:44.790Z",
+          "changed_by": "Mac",
           "changes": {
             "paid": {
               "from": true,
@@ -133,6 +152,7 @@
         },
         {
           "changed_at": "2026-04-15T00:51:44.189Z",
+          "changed_by": "Mac",
           "changes": {
             "paid": {
               "from": false,
@@ -142,6 +162,7 @@
         },
         {
           "changed_at": "2026-04-15T00:51:42.411Z",
+          "changed_by": "Mac",
           "changes": {
             "paid": {
               "from": true,
@@ -151,6 +172,7 @@
         },
         {
           "changed_at": "2026-04-15T00:51:36.339Z",
+          "changed_by": "Mac",
           "changes": {
             "paid": {
               "from": false,
@@ -160,6 +182,7 @@
         },
         {
           "changed_at": "2026-04-15T00:51:22.237Z",
+          "changed_by": "Mac",
           "changes": {
             "paid": {
               "from": true,
@@ -169,6 +192,7 @@
         },
         {
           "changed_at": "2026-04-15T00:51:21.678Z",
+          "changed_by": "Mac",
           "changes": {
             "paid": {
               "from": false,
@@ -178,6 +202,7 @@
         },
         {
           "changed_at": "2026-04-15T00:51:04.884Z",
+          "changed_by": "Mac",
           "changes": {
             "paid": {
               "from": true,
@@ -187,6 +212,7 @@
         },
         {
           "changed_at": "2026-04-15T00:50:57.177Z",
+          "changed_by": "Mac",
           "changes": {
             "paid": {
               "from": false,
@@ -196,6 +222,7 @@
         },
         {
           "changed_at": "2026-04-15T00:50:37.267Z",
+          "changed_by": "Mac",
           "changes": {
             "paid": {
               "from": true,
@@ -205,6 +232,7 @@
         },
         {
           "changed_at": "2026-04-15T00:50:03.431Z",
+          "changed_by": "Mac",
           "changes": {
             "type": {
               "from": "wants",
@@ -214,6 +242,7 @@
         },
         {
           "changed_at": "2026-04-15T00:50:00.731Z",
+          "changed_by": "Mac",
           "changes": {
             "description": {
               "from": "Room rent-test",
@@ -223,6 +252,7 @@
         },
         {
           "changed_at": "2026-04-15T00:49:27.949Z",
+          "changed_by": "Mac",
           "changes": {
             "type": {
               "from": "needs",
@@ -232,6 +262,7 @@
         },
         {
           "changed_at": "2026-04-15T00:49:23.458Z",
+          "changed_by": "Mac",
           "changes": {
             "description": {
               "from": "Room rent",
@@ -241,7 +272,9 @@
         }
       ],
       "type": "needs",
-      "paid": true
+      "paid": true,
+      "id": 81,
+      "updated_by": "Mac"
     },
     {
       "description": "Streaming apps",
@@ -251,7 +284,9 @@
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "wants",
-      "paid": true
+      "paid": true,
+      "id": 82,
+      "updated_by": "Mac"
     },
     {
       "description": "Gym membership",
@@ -261,7 +296,9 @@
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "wants",
-      "paid": true
+      "paid": true,
+      "id": 83,
+      "updated_by": "Mac"
     },
     {
       "description": "Coffee and going out",
@@ -271,7 +308,9 @@
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "wants",
-      "paid": true
+      "paid": true,
+      "id": 84,
+      "updated_by": "Mac"
     },
     {
       "description": "Emergency fund",
@@ -281,7 +320,9 @@
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "savings",
-      "paid": true
+      "paid": true,
+      "id": 85,
+      "updated_by": "Mac"
     },
     {
       "description": "Phone installment",
@@ -291,7 +332,9 @@
       "updated_at": "2026-04-14T16:50:38.492Z",
       "history": [],
       "type": "debts",
-      "paid": true
+      "paid": true,
+      "id": 86,
+      "updated_by": "Mac"
     }
   ]
 }

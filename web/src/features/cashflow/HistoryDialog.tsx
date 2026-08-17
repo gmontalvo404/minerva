@@ -8,6 +8,8 @@ type Translate = (key: string, params?: Record<string, string | number>) => stri
 
 export interface HistoryRecord {
   changed_at?: string;
+  /** Which device made the change: the phone's chosen name, or "Mac". */
+  changed_by?: string;
   changes?: Record<string, { from?: unknown; to?: unknown }>;
 }
 
@@ -114,12 +116,14 @@ export function HistoryDialog({ entry, onClose, t, language, kind = "outcome" }:
                     <span>{t("history_change_field")}</span>
                     <span>{t("history_change_from")}</span>
                     <span>{t("history_change_to")}</span>
+                    <span>{t("history_change_device")}</span>
                   </div>
                   {Object.entries(record.changes ?? {}).map(([field, values]) => (
                     <div className="history-item__row" key={field}>
                       <span>{fieldLabel(field, kind, t)}</span>
                       <span>{formatValue(field, values?.from, t, language)}</span>
                       <span>{formatValue(field, values?.to, t, language)}</span>
+                      <span>{record.changed_by ?? "—"}</span>
                     </div>
                   ))}
                 </div>

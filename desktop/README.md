@@ -12,15 +12,13 @@ and to open the dashboard in the browser you choose.
 - **Abrir**: opens the dashboard in the chosen browser whenever you want.
 - **React** (temporary): keeps the Vite dev server running next to the Python
   one, and **Abrir** opens it — `localhost:5173`, live sources. Unchecked,
-  **Abrir** opens the built copy at `localhost:8123/cashflow` instead. The old
-  dashboard never opens on its own anymore; it still answers at `/legacy/` if
-  you type it. This checkbox goes away with the old dashboard.
+  **Abrir** opens the built copy at `localhost:8123/cashflow` instead.
 - **Navegador**: only the browsers actually installed on the Mac show up. In
   Safari and the Chromium family (Chrome, Brave, Edge…), **Abrir** reuses the
   Minerva tab already open — focuses it and points it at the app — instead of
   stacking a new one; macOS asks for the Automation permission once. Firefox
   cannot be scripted, so there a fresh tab still opens.
-- **Puerto**: anything from 1024 up; `server.py` reads it as `MINERVA_PORT`. It
+- **Puerto**: anything from 1024 up; `server/server.py` reads it as `MINERVA_PORT`. It
   sits behind the **Editar puerto** checkbox, so a stray click never moves it.
 - **Datos**: which folder holds your own finance JSON (`cash_flow`, `debts`,
   `nutrition`), passed to the server as `MINERVA_DATA_ROOT`. Empty means the
@@ -40,7 +38,7 @@ using until you hit Recargar.
   satisfy the gate; the way back in is to edit `MinervaApp.swift` and rebuild.
 
   It gates *this app*, not the data: the JSON files stay readable to anyone
-  using your macOS account, and `python3 server.py` from a terminal still works.
+  using your macOS account, and `python3 server/server.py` from a terminal still works.
   For the files themselves, use FileVault or an encrypted disk image.
 - **Registro**: the server's own output, the same lines you would see in a
   terminal. **Ocultar peticiones** (on by default) drops the one-line-per-file
@@ -49,7 +47,7 @@ using until you hit Recargar.
 
 Every choice is remembered between runs.
 
-It detects a server started elsewhere (`python3 server.py` in a terminal) and
+It detects a server started elsewhere (`python3 server/server.py` in a terminal) and
 says so, and offers to stop it after asking.
 
 ## Build and install
@@ -71,11 +69,11 @@ is a plain bundle, and the server is a child process that dies with it.
 - `MakeIcon.swift`: draws the icon, run by `build.sh`.
 - `build.sh`: icon, compile, bundle, ad-hoc signature, smoke test.
 
-The app runs `python3 server.py` from the project folder with
+The app runs `python3 server/server.py` from the project folder with
 `MINERVA_BROWSER=none`, `MINERVA_PORT=<the port field>` and, when you point it
 somewhere, `MINERVA_DATA_ROOT=<the data folder>`, so the server does not open a
 browser and the app opens the one you picked. It looks for the newest
-`python3` on the Mac, since `server.py` needs 3.10 or newer.
+`python3` on the Mac, since `server/server.py` needs 3.10 or newer.
 
 `build.sh` stamps the project path into `Info.plist`. If you ever move the repo,
 the app says so and offers **Elegir carpeta…**; that choice overrides the

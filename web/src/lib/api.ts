@@ -409,6 +409,31 @@ export async function getDashboard(cashFlowRoot: string, year?: string): Promise
   return (await response.json()) as Dashboard;
 }
 
+export interface DataStamp {
+  /** Moves when any data file was saved. */
+  data: string;
+  /** Moves when a new web build landed in dist. */
+  app: string;
+}
+
+/**
+ * Two opaque change markers: the newest data-file mtime (someone saved — this
+ * tab, another one, or the iPhone through the outbox) and the build's own
+ * (a new front shipped, the page reloads itself). null when the server is
+ * unreachable or predates the endpoint, and polling just waits.
+ */
+export async function getDataStamp(): Promise<DataStamp | null> {
+  try {
+    const response = await fetch("/api/data/stamp", { cache: "no-store" });
+    if (!response.ok) return null;
+    const payload = (await response.json()) as { stamp?: unknown; app?: unknown };
+    if (typeof payload.stamp !== "string") return null;
+    return { data: payload.stamp, app: typeof payload.app === "string" ? payload.app : "0" };
+  } catch {
+    return null;
+  }
+}
+
 export interface ShoppingLine {
   id: string;
   name: string;
