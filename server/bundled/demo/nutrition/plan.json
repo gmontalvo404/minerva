@@ -1,0 +1,129 @@
+{
+  "ground_rules": [
+    ["Horarios", "Desayuno 8:00–9:00 a. m.; almuerzo 12:00–1:00 p. m.; snack 4:00–5:00 p. m.; cena 6:30–8:00 p. m."],
+    ["Porciones", "Media taza de grano cocido por comida y una porción de proteína del tamaño de la palma."],
+    ["Verduras", "Al menos dos colores distintos en almuerzo y cena."],
+    ["Agua", "Dos litros al día, repartidos entre comidas."],
+    ["Fruta", "Dos porciones diarias, una de ellas en el snack."],
+    ["Compras", "Una sola salida a la semana con la lista ya generada."],
+    ["Sobras", "Lo que quede del almuerzo se reserva para la cena del día siguiente."],
+    ["Excepciones", "Una comida libre por semana, sin arrastrarla al día siguiente."]
+  ],
+  "condiments": {
+    "yes": "Sal, pimienta, comino, ajo, cebolla, laurel, limón, aceite de oliva.",
+    "no": "Salsas azucaradas, aderezos cremosos comprados, cubos de caldo."
+  },
+  "ingredients": [
+    { "id": "arroz", "name": "Arroz", "unit": "kg", "price_per_unit": 4200, "category": "Granos y harinas", "store": "D1" },
+    { "id": "avena", "name": "Avena en hojuelas", "unit": "kg", "price_per_unit": 6800, "category": "Granos y harinas", "store": "D1" },
+    { "id": "pechuga", "name": "Pechuga de pollo", "unit": "kg", "price_per_unit": 15900, "category": "Proteína", "store": "Carnes San Jerónimo" },
+    { "id": "huevo", "name": "Huevo", "unit": "unidad", "price_per_unit": 650, "category": "Proteína", "store": "Ara" },
+    { "id": "frijol", "name": "Fríjol", "unit": "kg", "price_per_unit": 8900, "category": "Granos y harinas", "store": "Mercacentro" },
+    { "id": "leche", "name": "Leche", "unit": "taza", "price_per_unit": 1200, "category": "Lácteos", "store": "Ara" },
+    { "id": "papa", "name": "Papa", "unit": "kg", "price_per_unit": 3200, "category": "Tubérculos", "store": "Plaza La 28" },
+    { "id": "tomate", "name": "Tomate", "unit": "kg", "price_per_unit": 4800, "category": "Verduras", "store": "Plaza La 28" },
+    { "id": "cebolla", "name": "Cebolla", "unit": "kg", "price_per_unit": 3900, "category": "Verduras", "store": "Plaza La 28" },
+    { "id": "zanahoria", "name": "Zanahoria", "unit": "kg", "price_per_unit": 2900, "category": "Verduras", "store": "Plaza Jardín" },
+    { "id": "banano", "name": "Banano", "unit": "unidad", "price_per_unit": 700, "category": "Frutas", "store": "Plaza Jardín" },
+    { "id": "manzana", "name": "Manzana", "unit": "unidad", "price_per_unit": 1500, "category": "Frutas", "store": "Ara" },
+    { "id": "aceite", "name": "Aceite de oliva", "unit": "cda", "price_per_unit": 900, "category": "Otros", "store": "D1" }
+  ],
+  "meals": {
+    "breakfast": [
+      {
+        "id": "demo-desayuno-avena",
+        "name": "Avena con banano",
+        "description": "Avena cocida en leche, banano en rodajas encima.",
+        "items": [
+          { "ingredient": "avena", "qty": 0.08 },
+          { "ingredient": "leche", "qty": 1 },
+          { "ingredient": "banano", "qty": 1 }
+        ]
+      },
+      {
+        "id": "demo-desayuno-huevos",
+        "name": "Huevos con tomate",
+        "description": "Dos huevos revueltos con tomate y cebolla.",
+        "items": [
+          { "ingredient": "huevo", "qty": 2 },
+          { "ingredient": "tomate", "qty": 0.1 },
+          { "ingredient": "cebolla", "qty": 0.05 }
+        ]
+      }
+    ],
+    "lunch": [
+      {
+        "id": "demo-almuerzo-pollo",
+        "name": "Pollo con arroz y ensalada",
+        "description": "Pechuga a la plancha, arroz blanco y ensalada de tomate y cebolla.",
+        "items": [
+          { "ingredient": "pechuga", "qty": 0.2 },
+          { "ingredient": "arroz", "qty": 0.08 },
+          { "ingredient": "tomate", "qty": 0.1 },
+          { "ingredient": "aceite", "qty": 1 }
+        ]
+      },
+      {
+        "id": "demo-almuerzo-frijoles",
+        "name": "Fríjoles con arroz",
+        "description": "Fríjoles cocidos con zanahoria, arroz y huevo.",
+        "items": [
+          { "ingredient": "frijol", "qty": 0.12 },
+          { "ingredient": "arroz", "qty": 0.08 },
+          { "ingredient": "zanahoria", "qty": 0.06 },
+          { "ingredient": "huevo", "qty": 1 }
+        ]
+      }
+    ],
+    "snack": [
+      {
+        "id": "demo-snack-manzana",
+        "name": "Manzana",
+        "description": "Una manzana entera.",
+        "items": [{ "ingredient": "manzana", "qty": 1 }]
+      },
+      {
+        "id": "demo-snack-banano",
+        "name": "Banano con avena",
+        "description": "Banano y un puñado de avena tostada.",
+        "items": [
+          { "ingredient": "banano", "qty": 1 },
+          { "ingredient": "avena", "qty": 0.03 }
+        ]
+      }
+    ],
+    "dinner": [
+      {
+        "id": "demo-cena-sopa",
+        "name": "Sopa de verduras",
+        "description": "Papa, zanahoria y cebolla, con pollo desmechado.",
+        "items": [
+          { "ingredient": "papa", "qty": 0.15 },
+          { "ingredient": "zanahoria", "qty": 0.08 },
+          { "ingredient": "cebolla", "qty": 0.05 },
+          { "ingredient": "pechuga", "qty": 0.1 }
+        ]
+      },
+      {
+        "id": "demo-cena-huevos",
+        "name": "Huevos con papa",
+        "description": "Papa salteada con huevo y cebolla.",
+        "items": [
+          { "ingredient": "papa", "qty": 0.15 },
+          { "ingredient": "huevo", "qty": 2 },
+          { "ingredient": "cebolla", "qty": 0.05 }
+        ]
+      }
+    ]
+  },
+  "week": [
+    { "day": "Día 1", "breakfast": "demo-desayuno-avena", "lunch": "demo-almuerzo-pollo", "snack": "demo-snack-manzana", "dinner": "demo-cena-sopa" },
+    { "day": "Día 2", "breakfast": "demo-desayuno-huevos", "lunch": "demo-almuerzo-frijoles", "snack": "demo-snack-banano", "dinner": "demo-cena-huevos" },
+    { "day": "Día 3", "breakfast": "demo-desayuno-avena", "lunch": "demo-almuerzo-pollo", "snack": "demo-snack-manzana", "dinner": "demo-cena-sopa" },
+    { "day": "Día 4", "breakfast": "demo-desayuno-huevos", "lunch": "demo-almuerzo-frijoles", "snack": "demo-snack-banano", "dinner": "demo-cena-huevos" },
+    { "day": "Día 5", "breakfast": "demo-desayuno-avena", "lunch": "demo-almuerzo-pollo", "snack": "demo-snack-manzana", "dinner": "demo-cena-sopa" },
+    { "day": "Día 6", "breakfast": "demo-desayuno-huevos", "lunch": "demo-almuerzo-frijoles", "snack": "demo-snack-banano", "dinner": "demo-cena-huevos" },
+    { "day": "Día 7", "breakfast": "demo-desayuno-avena", "lunch": "demo-almuerzo-pollo", "snack": "demo-snack-manzana", "dinner": "demo-cena-sopa" }
+  ],
+  "excluded_ingredients": []
+}

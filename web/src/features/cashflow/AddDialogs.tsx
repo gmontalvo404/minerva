@@ -1,0 +1,326 @@
+import { useState } from "react";
+import { createEntry, createIncome } from "../../lib/api";
+import type { DebtDetail } from "../../lib/api";
+import type { CategoryOption } from "../../lib/categories";
+import type { Language } from "../../lib/i18n";
+import { Dialog, Select } from "../../ui";
+import { DebtPicker } from "./DebtPicker";
+import { TYPE_META, tint } from "./EntriesTable";
+import { ENTRY_TYPES } from "./types";
+import type { EntryType } from "./types";
+
+type Translate = (key: string, params?: Record<string, string | number>) => string;
+
+export interface AddEntryDialogProps {
+  open: boolean;
+  /** The debts a "debts" movement can be paid into. */
+  debts: DebtDetail[];
+  language: Language;
+  onClose: () => void;
+  /** The month file the movement goes into. */
+  path: string;
+  categoryOptions: CategoryOption[];
+  t: Translate;
+  onCreated: () => Promise<void> | void;
+  onError: (message: string) => void;
+}
+
+/**
+ * Create a movement, on the markup of #create-entry-dialog: the movement form
+ * grid with its fields, the type pill shell, and the cancel/submit pair inside
+ * movement-form__actions.
+ */
+export function AddEntryDialog({
+  open,
+  debts,
+  language,
+  onClose,
+  path,
+  categoryOptions,
+  t,
+  onCreated,
+  onError,
+}: AddEntryDialogProps) {
+  const [description, setDescription] = useState("");
+  const [type, setType] = useState<EntryType>("needs");
+  const [category, setCategory] = useState<string | null>(null);
+  const [amount, setAmount] = useState("");
+  const [paid, setPaid] = useState(true);
+  const [linkedDebts, setLinkedDebts] = useState<string[]>([]);
+
+  // Leaving the debts type drops the picks, the same way the original wipes the
+  // section when the type changes.
+  const chooseType = (next: EntryType) => {
+    setType(next);
+    if (next !== "debts") setLinkedDebts([]);
+  };
+
+  const toggleDebt = (id: string, checked: boolean) => {
+    setLinkedDebts((current) => (checked ? [...current, id] : current.filter((value) => value !== id)));
+  };
+
+  const submit = async () => {
+    try {
+      await createEntry(path, {
+        description: description.trim(),
+        type,
+        ...(type === "debts" && linkedDebts.length
+          ? { linked_debts: linkedDebts, extra_payment: true }
+          : {}),
+        category: category ?? categoryOptions[0]?.value ?? "",
+        amount_cop: Number(amount) || 0,
+        paid,
+      });
+      setDescription("");
+      setAmount("");
+      setCategory(null);
+      setLinkedDebts([]);
+      onClose();
+      await onCreated();
+    } catch {
+      onError(t("create_entry_error"));
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      variant="create-entry-dialog"
+      panelClassName="movement-dialog__panel"
+      eyebrow={t("create_entry_eyebrow")}
+      title={t("create_entry_title")}
+      actions={
+        <>
+          <button type="button" className="entry-history-button movement-form__cancel" onClick={onClose}>
+            {t("create_entry_cancel")}
+          </button>
+          <button
+            type="button"
+            className="button button--compact button--entry-add"
+            onClick={() => void submit()}
+          >
+            {t("create_entry_submit")}
+          </button>
+        </>
+      }
+    >
+      <div className="movement-form__grid">
+        <label className="field">
+          <span className="field__label">{t("monthly_entries_description")}</span>
+          <input
+            className="entry-input"
+            type="text"
+            required
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+          />
+        </label>
+
+        <div className="field">
+          <span className="field__label">{t("monthly_entries_category")}</span>
+          <div className="entry-select-shell">
+            <Select
+              label={t("monthly_entries_category")}
+              wrapperClassName={null}
+              menuVariant="pretty-select-menu--category"
+              searchable
+              options={categoryOptions}
+              value={category ?? categoryOptions[0]?.value ?? null}
+              onChange={setCategory}
+            />
+          </div>
+        </div>
+
+        <div className="field">
+          <span className="field__label">{t("monthly_entries_type")}</span>
+          <div
+            className="entry-type-shell"
+            style={{
+              ["--entry-type-color" as string]: TYPE_META[type].color,
+              ["--entry-type-bg" as string]: tint(TYPE_META[type].color, 0.14),
+              ["--entry-type-border" as string]: tint(TYPE_META[type].color, 0.22),
+              ["--entry-type-bg-dark" as string]: tint(TYPE_META[type].color, 0.24),
+              ["--entry-type-border-dark" as string]: tint(TYPE_META[type].color, 0.44),
+            }}
+          >
+            <Select
+              label={t("monthly_entries_type")}
+              wrapperClassName={null}
+              menuVariant="pretty-select-menu--type"
+              options={ENTRY_TYPES.map((option) => ({
+                value: option,
+                label: t(TYPE_META[option].labelKey),
+                swatch: TYPE_META[option].color,
+              }))}
+              value={type}
+              onChange={chooseType}
+            />
+          </div>
+        </div>
+
+        <label className="field">
+          <span className="field__label">{t("monthly_entries_cop")}</span>
+          <input
+            className="entry-input entry-input--amount"
+            type="number"
+            step="0.01"
+            inputMode="decimal"
+            min="0"
+            required
+            value={amount}
+            onChange={(event) => setAmount(event.target.value)}
+          />
+        </label>
+
+        <label className="field movement-form__active">
+          <span className="field__label">{t("monthly_entries_paid")}</span>
+          <span className="movement-form__active-control">
+            <span className="movement-form__active-text">{t("create_entry_paid_hint")}</span>
+            <span className="entry-active-toggle">
+              <input
+                className="entry-active-toggle__input"
+                type="checkbox"
+                checked={paid}
+                onChange={(event) => setPaid(event.target.checked)}
+              />
+              <span className="entry-active-toggle__ui" aria-hidden="true" />
+            </span>
+          </span>
+        </label>
+
+        {type === "debts" ? (
+          <DebtPicker
+            debts={debts}
+            selected={linkedDebts}
+            onToggle={toggleDebt}
+            legend={t("create_entry_debt_target")}
+            hint={t("create_entry_debt_hint")}
+            emptyMessage={t("create_entry_debt_empty")}
+            language={language}
+          />
+        ) : null}
+      </div>
+    </Dialog>
+  );
+}
+
+export interface AddIncomeDialogProps {
+  open: boolean;
+  onClose: () => void;
+  path: string;
+  monthIndex: number;
+  t: Translate;
+  onCreated: () => Promise<void> | void;
+  onError: (message: string) => void;
+}
+
+/** Create an income; the server recomputes the month totals from the entries. */
+export function AddIncomeDialog({
+  open,
+  onClose,
+  path,
+  monthIndex,
+  t,
+  onCreated,
+  onError,
+}: AddIncomeDialogProps) {
+  const [description, setDescription] = useState("");
+  const [amountUsd, setAmountUsd] = useState("");
+  const [usdCop, setUsdCop] = useState("");
+  const [amountCop, setAmountCop] = useState("");
+  const [received, setReceived] = useState(true);
+
+  const submit = async () => {
+    try {
+      // An amount left blank is not sent: the server works it out from the
+      // other one and the rate. Sending a 0 would store a zero instead.
+      await createIncome(path, monthIndex, {
+        description: description.trim(),
+        usd_cop: Number(usdCop) || 0,
+        ...(amountUsd.trim() ? { amount_usd: Number(amountUsd) || 0 } : {}),
+        ...(amountCop.trim() ? { amount_cop: Number(amountCop) || 0 } : {}),
+        received,
+      });
+      setDescription("");
+      setAmountUsd("");
+      setUsdCop("");
+      setAmountCop("");
+      onClose();
+      await onCreated();
+    } catch {
+      onError(t("create_income_error"));
+    }
+  };
+
+  const numberField = (label: string, value: string, set: (value: string) => void) => (
+    <label className="field">
+      <span className="field__label">{label}</span>
+      <input
+        className="entry-input entry-input--amount"
+        type="number"
+        step="0.01"
+        inputMode="decimal"
+        value={value}
+        onChange={(event) => set(event.target.value)}
+      />
+    </label>
+  );
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      variant="create-entry-dialog"
+      panelClassName="movement-dialog__panel"
+      eyebrow={t("create_income_eyebrow")}
+      title={t("create_income_title")}
+      actions={
+        <>
+          <button type="button" className="entry-history-button movement-form__cancel" onClick={onClose}>
+            {t("create_entry_cancel")}
+          </button>
+          <button
+            type="button"
+            className="button button--compact button--entry-add"
+            onClick={() => void submit()}
+          >
+            {t("create_income_submit")}
+          </button>
+        </>
+      }
+    >
+      <div className="movement-form__grid">
+        <label className="field">
+          <span className="field__label">{t("monthly_entries_description")}</span>
+          <input
+            className="entry-input"
+            type="text"
+            required
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+          />
+        </label>
+
+        {numberField(t("monthly_entries_usd"), amountUsd, setAmountUsd)}
+        {numberField(t("monthly_income_fx"), usdCop, setUsdCop)}
+        {numberField(t("monthly_entries_cop"), amountCop, setAmountCop)}
+
+        <label className="field movement-form__active">
+          <span className="field__label">{t("monthly_income_received")}</span>
+          <span className="movement-form__active-control">
+            <span className="entry-active-toggle">
+              <input
+                className="entry-active-toggle__input"
+                type="checkbox"
+                checked={received}
+                onChange={(event) => setReceived(event.target.checked)}
+              />
+              <span className="entry-active-toggle__ui" aria-hidden="true" />
+            </span>
+          </span>
+        </label>
+      </div>
+    </Dialog>
+  );
+}

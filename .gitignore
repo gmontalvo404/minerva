@@ -2,7 +2,10 @@ __pycache__/
 **/__pycache__/
 scripts/
 
-# Keep personal finance data local. The demo dataset is safe to publish.
-/finance/data/*
-!/finance/data/demo/
-!/finance/data/demo/**
+# Your finance data stays out of the repo — since 2026-08 it is a symlink into
+# iCloud Drive, so no trailing slash: the pattern must match the link itself.
+# The demo dataset in finance/app ships with the repo.
+/finance/data
+
+# Working notes for/by AI sessions (audits, plans): local only, never committed.
+/.ai/

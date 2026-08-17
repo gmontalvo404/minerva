@@ -1,0 +1,160 @@
+{
+  "entries": [
+    {
+      "description": "Room rent",
+      "category": "Housing",
+      "amount_cop": 720000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "needs",
+      "paid": true,
+      "id": 100,
+      "updated_by": "Mac"
+    },
+    {
+      "description": "Groceries",
+      "category": "Market",
+      "amount_cop": 300000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "needs",
+      "paid": true,
+      "id": 101,
+      "updated_by": "Mac"
+    },
+    {
+      "description": "Transport card",
+      "category": "Cash",
+      "amount_cop": 180000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "needs",
+      "paid": true,
+      "id": 102,
+      "updated_by": "Mac"
+    },
+    {
+      "description": "Cellphone plan",
+      "category": "Technology",
+      "amount_cop": 42000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "needs",
+      "paid": true,
+      "id": 103,
+      "updated_by": "Mac"
+    },
+    {
+      "description": "Utilities share",
+      "category": "Housing",
+      "amount_cop": 95000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "needs",
+      "paid": true,
+      "id": 104,
+      "updated_by": "Mac"
+    },
+    {
+      "description": "Personal care",
+      "category": "Personal care",
+      "amount_cop": 45000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "needs",
+      "paid": true,
+      "id": 105,
+      "updated_by": "Mac"
+    },
+    {
+      "description": "Pharmacy / clinic",
+      "category": "Health",
+      "amount_cop": 30000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "needs",
+      "paid": true,
+      "id": 106,
+      "updated_by": "Mac"
+    },
+    {
+      "description": "Streaming apps",
+      "category": "Entertainment",
+      "amount_cop": 28000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "wants",
+      "paid": true,
+      "id": 107,
+      "updated_by": "Mac"
+    },
+    {
+      "description": "Gym membership",
+      "category": "GYM",
+      "amount_cop": 65000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "wants",
+      "paid": true,
+      "id": 108,
+      "updated_by": "Mac"
+    },
+    {
+      "description": "Coffee and going out",
+      "category": "Restaurant",
+      "amount_cop": 110000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "wants",
+      "paid": true,
+      "id": 109,
+      "updated_by": "Mac"
+    },
+    {
+      "description": "Birthday / family gift",
+      "category": "Family",
+      "amount_cop": 30000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "wants",
+      "paid": true,
+      "id": 110,
+      "updated_by": "Mac"
+    },
+    {
+      "description": "Emergency fund",
+      "category": "Emergency fund",
+      "amount_cop": 80000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "savings",
+      "paid": true,
+      "id": 111,
+      "updated_by": "Mac"
+    },
+    {
+      "description": "Phone installment",
+      "category": "Debt",
+      "amount_cop": 80000,
+      "created_at": "2026-04-14T16:50:38.492Z",
+      "updated_at": "2026-04-14T16:50:38.492Z",
+      "history": [],
+      "type": "debts",
+      "paid": true,
+      "id": 112,
+      "updated_by": "Mac"
+    }
+  ]
+}

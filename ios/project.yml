@@ -1,0 +1,33 @@
+## Spec de XcodeGen: `xcodegen generate` (desde ios/) produce Minerva.xcodeproj.
+## El proyecto generado no se versiona; este archivo es la fuente.
+name: Minerva
+options:
+  bundleIdPrefix: com.gmontalvo.minerva
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  Minerva:
+    type: application
+    platform: iOS
+    sources:
+      - Minerva
+    info:
+      path: Minerva/Info.plist
+      properties:
+        CFBundleDisplayName: Minerva
+        UILaunchScreen: {}
+        NSFaceIDUsageDescription: Minerva se abre con Face ID para que tus finanzas queden detrás del sensor.
+        UIAppFonts:
+          - Forum-Regular.ttf
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gmontalvo.minerva.mobile
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 9LWWWNT87G
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_VERSION: "5.9"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
