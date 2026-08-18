@@ -157,6 +157,9 @@ struct RootView: View {
     @State private var year: String?
     @State private var section: AppSection = .finances
     @State private var module: Module = .cashflow
+    /// Qué lista de deudas se ve. Vive aquí y no en DebtsHome porque quien
+    /// pinta el botón es el selector de arriba, con los demás.
+    @State private var showCanceledDebts = false
     @State private var showSettings = false
     @Environment(\.colorScheme) private var scheme
     @Environment(\.scenePhase) private var scenePhase
@@ -298,7 +301,12 @@ struct RootView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     selector(for: response)
                     if section == .finances, module == .debts {
-                        DebtsHome(debts: store.debtDetails, live: dataset == .live, theme: theme)
+                        DebtsHome(
+                            debts: store.debtDetails,
+                            live: dataset == .live,
+                            showCanceled: showCanceledDebts,
+                            theme: theme
+                        )
                     }
                     if dataset == .demo {
                         Text("Estás viendo el demo.")
@@ -331,7 +339,7 @@ struct RootView: View {
     private func selector(for response: DashboardResponse) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             Eyebrow("Sección", theme)
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+            LazyVGrid(columns: pairColumns, spacing: 8) {
                 ForEach(AppSection.allCases) { candidate in
                     Button {
                         section = candidate
@@ -346,7 +354,7 @@ struct RootView: View {
                 comingSoon(label: section.label, icon: section.icon)
             } else {
                 Eyebrow("Módulo", theme)
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                LazyVGrid(columns: pairColumns, spacing: 8) {
                     ForEach(Module.allCases) { candidate in
                         Button {
                             module = candidate
@@ -358,8 +366,23 @@ struct RootView: View {
                 }
 
                 if module == .debts {
-                    // El módulo vive abajo, en sus propias tarjetas.
-                    EmptyView()
+                    // Las listas viven abajo, en sus propias tarjetas, pero
+                    // elegir cuál se ve es un selector como los otros.
+                    Eyebrow("Vista", theme)
+                    LazyVGrid(columns: pairColumns, spacing: 8) {
+                        Button {
+                            showCanceledDebts = false
+                        } label: {
+                            SelectorBox(label: "Activas", active: !showCanceledDebts, theme: theme)
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            showCanceledDebts = true
+                        } label: {
+                            SelectorBox(label: "Canceladas", active: showCanceledDebts, theme: theme)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 } else if module != .cashflow {
                     comingSoon(label: module.label, icon: module.icon)
                 } else {
@@ -445,6 +468,11 @@ struct RootView: View {
 
     private var boxColumns: [GridItem] {
         [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
+    }
+
+    /// Para los selectores de dos opciones: sección, módulo y la vista de deudas.
+    private var pairColumns: [GridItem] {
+        [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
     }
 
     private var setupPrompt: some View {

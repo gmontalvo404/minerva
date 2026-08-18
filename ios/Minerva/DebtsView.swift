@@ -8,11 +8,10 @@ struct DebtsHome: View {
     /// nil = el snapshot de deudas aún no llega (servidor sin reiniciar).
     let debts: [DebtDetail]?
     let live: Bool
+    /// Cuál de las dos listas pintar. Lo decide el selector de la portada;
+    /// cancelada = sin cuotas pendientes, no hay bandera aparte.
+    let showCanceled: Bool
     let theme: Theme
-
-    /// El switch Activas / Canceladas de la web: cancelada = sin cuotas
-    /// pendientes, no hay bandera aparte.
-    @State private var showCanceled = false
 
     var body: some View {
         if let debts {
@@ -20,7 +19,6 @@ struct DebtsHome: View {
                 showCanceled ? $0.remainingInstallments <= 0 : $0.remainingInstallments > 0
             }
             kpis(for: visible)
-            filterChips
             if visible.isEmpty {
                 Text(showCanceled ? "Sin deudas canceladas." : "Sin deudas activas.")
                     .font(.forum(16))
@@ -85,23 +83,6 @@ struct DebtsHome: View {
                 value: Format.percent1(progress),
                 detail: "Capital pagado del financiado"
             )
-        }
-    }
-
-    private var filterChips: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
-            Button {
-                showCanceled = false
-            } label: {
-                SelectorBox(label: "Activas", active: !showCanceled, theme: theme)
-            }
-            .buttonStyle(.plain)
-            Button {
-                showCanceled = true
-            } label: {
-                SelectorBox(label: "Canceladas", active: showCanceled, theme: theme)
-            }
-            .buttonStyle(.plain)
         }
     }
 
