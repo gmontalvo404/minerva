@@ -11,6 +11,7 @@ import { nutritionPath } from "../../lib/dataset";
 import type { Dataset } from "../../lib/dataset";
 import { formatCop } from "../../lib/format";
 import { translate } from "../../lib/i18n";
+import { useDataChanges } from "../../lib/useDataChanges";
 import type { Language } from "../../lib/i18n";
 import { KpiCard, MonthNav, Panel } from "../../ui";
 import { categoryColors, categoryNames } from "./categories";
@@ -96,6 +97,16 @@ export function NutritionPage({ dataset, language, onSidebar }: NutritionPagePro
   const saveChain = useRef<Promise<void>>(Promise.resolve());
   /** Bumped when a conflict reloads the plan: edits queued before it are stale. */
   const generation = useRef(0);
+
+  // El plan puede cambiar detrás: el dado del teléfono, otra pestaña. Sin
+  // esto la semana se quedaba como estaba al abrir, que es como los dos
+  // dispositivos acababan mostrando cosas distintas.
+  useDataChanges(() => {
+    void getNutritionPlan<NutritionPlan>(path, EMPTY_PLAN).then(({ document, hash }) => {
+      baseHash.current = hash;
+      setPlan({ ...EMPTY_PLAN, ...document });
+    });
+  });
 
   useEffect(() => {
     let cancelled = false;
