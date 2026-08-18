@@ -153,6 +153,16 @@ struct Entry: Decodable, Identifiable {
 struct DebtOption: Decodable, Identifiable {
     let id: String
     let name: String
+    /// Lo que le queda por pagar, cuando se sabe. El manifiesto solo trae id y
+    /// nombre; el detalle de deudas sí lo sabe, y de ahí se arma la lista que
+    /// ve el editor — que necesita el saldo para no dejar abonar de más.
+    var remainingBalance: Double?
+
+    init(id: String, name: String, remainingBalance: Double? = nil) {
+        self.id = id
+        self.name = name
+        self.remainingBalance = remainingBalance
+    }
 }
 
 /// mobile/debts.json: las deudas con su plan ya calculado por el servidor —

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import type { DebtDetail } from "../../lib/api";
 import { formatCopNoCode } from "../../lib/format";
 import type { Language } from "../../lib/i18n";
@@ -11,6 +12,10 @@ export interface DebtPickerProps {
   hint: string;
   emptyMessage: string;
   language: Language;
+  /** What the movement is worth, to warn when it exceeds what is still owed. */
+  amount?: number;
+  /** Told to the parent so it can hold the submit back. */
+  onOverpay?: (overpaying: boolean) => void;
 }
 
 /**
@@ -26,8 +31,22 @@ export function DebtPicker({
   hint,
   emptyMessage,
   language,
+  amount,
+  onOverpay,
 }: DebtPickerProps) {
   const open = debts.filter((debt) => debt.remaining_installments > 0);
+
+  // A settled debt is already out of the list above; this catches the other
+  // half of the rule, putting in more than what is left to pay. The server
+  // checks it again — a form is not a guarantee.
+  const headroom = open
+    .filter((debt) => selected.includes(debt.id))
+    .reduce((total, debt) => total + debt.remaining_balance, 0);
+  const overpaying = selected.length > 0 && (amount ?? 0) - headroom > 0.5;
+
+  useEffect(() => {
+    onOverpay?.(overpaying);
+  }, [overpaying, onOverpay]);
 
   return (
     <fieldset className="field movement-form__full create-entry-debt-section">
@@ -55,6 +74,12 @@ export function DebtPicker({
           ))
         )}
       </div>
+
+      {overpaying ? (
+        <p className="field__hint create-entry-debt-list__empty">
+          {`El abono supera lo que queda por pagar: ${formatCopNoCode(headroom, language)}.`}
+        </p>
+      ) : null}
     </fieldset>
   );
 }

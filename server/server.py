@@ -478,6 +478,14 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                     "This entry is auto-generated from a debt. Only the paid status can be edited here; update the debt instead."
                 )
 
+        if "linked_debts" in normalized_updates or "amount_cop" in normalized_updates:
+            self._validate_debt_links(
+                relative_path,
+                normalized_updates.get("linked_debts", source_entry.get("linked_debts") or []),
+                normalized_updates.get("amount_cop", source_entry.get("amount_cop", 0)),
+                current_entry=source_entry,
+            )
+
         updated_entry.update(normalized_updates)
         if "paid" in normalized_updates:
             updated_entry.pop("active", None)
@@ -577,6 +585,13 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                     raise ValueError("Cannot insert a movement after a different type")
 
         new_entry = self._normalize_new_entry(entry_payload)
+        # Un movimiento nace sin nada descontado todavía, así que aquí el saldo
+        # de la deuda se mira tal cual está.
+        self._validate_debt_links(
+            relative_path,
+            new_entry.get("linked_debts") or [],
+            new_entry.get("amount_cop", 0),
+        )
         # El id va DESPUÉS de normalizar: _normalize_new_entry arma un dict
         # nuevo y se comería uno puesto antes — así nacían movimientos sin id.
         new_entry["id"] = self._next_entry_id(relative_path)
@@ -1571,6 +1586,23 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             paid_installments = self._to_bounded_int(
                 debt.get("paid_installments", 0), minimum=0, maximum=term
             )
+            # Aquí el número del archivo manda sobre el calendario, así que el
+            # calendario tiene que decir lo mismo: sin fechas reales ninguna
+            # fila se marca sola y una deuda saldada se vería con todas las
+            # cuotas en blanco. Se chulean las primeras, que es el orden en que
+            # se pagan.
+            for row in schedule:
+                if 0 < row["period"] <= paid_installments:
+                    row["paid"] = True
+
+        # Una cuota que no cobra nada no está pendiente: la deuda se saldó antes
+        # de llegar a ella, normalmente a punta de abonos. Sin esto, la deuda
+        # cancelada temprano se queda con las últimas cuotas en círculo vacío,
+        # como si debiera algo. Va después de contar las derivadas, para no
+        # inflar las pagadas de una deuda enlazada al cash flow.
+        for row in schedule:
+            if row["period"] > 0 and row["total_payment"] <= 0:
+                row["paid"] = True
 
         active = sum(1 for row in schedule if row["period"] > 0 and row["total_payment"] > 0)
         remaining_row = schedule[paid_installments] if paid_installments < len(schedule) else schedule[-1]
@@ -2484,6 +2516,59 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         if legacy_key in entry:
             return bool(entry[legacy_key])
         return default
+
+    def _validate_debt_links(
+        self,
+        relative_path: str,
+        debt_ids: list,
+        amount: float,
+        *,
+        current_entry: dict | None = None,
+    ) -> None:
+        """Un abono no puede ir a una deuda saldada ni pasarse del saldo.
+
+        La misma regla que hacen cumplir los formularios de la web y del
+        teléfono, repetida aquí a propósito: el servidor es el único sitio por
+        el que pasan las tres apps, y un formulario se salta con un curl.
+
+        Cuando el movimiento ya estaba enlazado a la deuda, su propio abono ya
+        está descontado del saldo, así que se le devuelve para no rechazar la
+        edición de un pago que fue justo el que la saldó.
+        """
+        if not debt_ids:
+            return
+
+        _, root = resolve_dataset_path(relative_path)
+        _, debts, _ = self._load_debts(f"{dataset_url_prefix(root)}/debts/debts.json")
+        by_id = {str(item.get("id", "")): item for item in debts if isinstance(item, dict)}
+
+        already = {str(value) for value in (current_entry or {}).get("linked_debts", []) or []}
+        own = abs(self._to_finite_float((current_entry or {}).get("amount_cop", 0)))
+
+        for raw_id in debt_ids:
+            debt_id = str(raw_id)
+            debt = by_id.get(debt_id)
+            if debt is None:
+                raise ValueError(f"No existe la deuda {debt_id}.")
+
+            detail = self._build_debt_detail(
+                debt, self._debt_linked_payments_across_years(debt, debts)
+            )
+            raw_name = detail.get("name")
+            name = raw_name.get("es") if isinstance(raw_name, dict) else (raw_name or debt_id)
+            headroom = self._to_finite_float(detail.get("remaining_balance", 0))
+            if debt_id in already:
+                headroom += own
+
+            if headroom <= 0:
+                raise ValueError(
+                    f"La deuda «{name}» ya está cancelada: no admite más abonos."
+                )
+            if abs(amount) - headroom > 0.5:
+                raise ValueError(
+                    f"El abono supera el saldo de «{name}»: quedan "
+                    f"{headroom:,.0f} COP por pagar."
+                )
 
     def _normalize_updates(self, updates: dict) -> dict:
         normalized = {}

@@ -45,6 +45,8 @@ export function AddEntryDialog({
   const [type, setType] = useState<EntryType>("needs");
   const [category, setCategory] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
+  /** True while the abono is worth more than the debts it is aimed at. */
+  const [overpaying, setOverpaying] = useState(false);
   const [paid, setPaid] = useState(true);
   const [linkedDebts, setLinkedDebts] = useState<string[]>([]);
 
@@ -99,6 +101,7 @@ export function AddEntryDialog({
             type="button"
             className="button button--compact button--entry-add"
             onClick={() => void submit()}
+            disabled={overpaying}
           >
             {t("create_entry_submit")}
           </button>
@@ -198,6 +201,8 @@ export function AddEntryDialog({
             hint={t("create_entry_debt_hint")}
             emptyMessage={t("create_entry_debt_empty")}
             language={language}
+            amount={Number(amount) || 0}
+            onOverpay={setOverpaying}
           />
         ) : null}
       </div>

@@ -26,6 +26,28 @@ struct EditEntryView: View {
     @State private var paid: Bool
     /// A qué deudas abona: el DebtPicker de la web, hecho filas nativas.
     @State private var linkedDebts: Set<String>
+
+    /// Solo las que aún deben algo. Una deuda saldada no admite más abonos, así
+    /// que ni se ofrece; cuando el saldo no se conoce se deja pasar y decide el
+    /// servidor. La que ya estaba marcada se queda visible, para poder
+    /// desmarcarla en un movimiento viejo.
+    private var payableDebts: [DebtOption] {
+        debts.filter { ($0.remainingBalance ?? 1) > 0 || linkedDebts.contains($0.id) }
+    }
+
+    /// Cuánto se puede abonar en total con lo que hay marcado.
+    private var linkedHeadroom: Double {
+        debts.filter { linkedDebts.contains($0.id) }
+            .reduce(0) { $0 + ($1.remainingBalance ?? .greatestFiniteMagnitude) }
+    }
+
+    /// El aviso bajo el importe, o nil si el abono cabe.
+    private var abonoWarning: String? {
+        guard kind == .debts, !linkedDebts.isEmpty else { return nil }
+        let value = abs(Self.parseAmount(amountText) ?? 0)
+        guard value > 0, linkedHeadroom.isFinite, value - linkedHeadroom > 0.5 else { return nil }
+        return "El abono supera lo que queda por pagar: \(Format.cop(linkedHeadroom))."
+    }
     /// Cuál selector (categoría o tipo) está abierto como hoja.
     @State private var activePicker: PickerField?
 
@@ -177,7 +199,7 @@ struct EditEntryView: View {
             if kind == .debts {
                 field("¿Es un abono a una deuda?") {
                     VStack(alignment: .leading, spacing: 8) {
-                        if debts.isEmpty {
+                        if payableDebts.isEmpty {
                             Text("No hay deudas activas para vincular.")
                                 .font(.forum(15))
                                 .foregroundStyle(theme.muted)
@@ -189,7 +211,12 @@ struct EditEntryView: View {
                             Text("Marca las deudas a las que aplica este abono. Con una o más, el movimiento queda vinculado.")
                                 .font(.forum(13))
                                 .foregroundStyle(theme.muted)
-                            ForEach(debts) { debt in
+                            if let abonoWarning {
+                                Text(abonoWarning)
+                                    .font(.forum(13))
+                                    .foregroundStyle(theme.negative)
+                            }
+                            ForEach(payableDebts) { debt in
                                 Button {
                                     if linkedDebts.contains(debt.id) {
                                         linkedDebts.remove(debt.id)
@@ -256,7 +283,7 @@ struct EditEntryView: View {
                         )
                 }
                 .buttonStyle(.plain)
-                .disabled(!hasChanges)
+                .disabled(!hasChanges || abonoWarning != nil)
                 .opacity(hasChanges ? 1 : 0.45)
             }
             .padding(.top, 4)

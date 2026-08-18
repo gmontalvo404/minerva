@@ -14,6 +14,16 @@ final class DashboardStore: ObservableObject {
     /// El módulo de deudas completo; nil mientras el snapshot no llegue.
     @Published var debtDetails: [DebtDetail]?
 
+    /// Las deudas como las necesita el editor: con su saldo. Si el detalle aún
+    /// no llegó se cae al manifiesto, que trae id y nombre pero no números —
+    /// entonces el servidor sigue siendo quien atrapa un abono de más.
+    var debtOptionsWithBalance: [DebtOption] {
+        guard let debtDetails, !debtDetails.isEmpty else { return debts }
+        return debtDetails.map {
+            DebtOption(id: $0.id, name: $0.displayName, remainingBalance: $0.remainingBalance)
+        }
+    }
+
     /// El guardado del demo: el cambio entra directo al dashboard en
     /// memoria, con el mes y el anual re-agregados por DemoMath. Se pierde
     /// al salir del demo — es un sandbox, como el de la web.
@@ -50,7 +60,9 @@ private struct MonthDetailScreen: View {
                 year: response.year,
                 editable: editable,
                 categories: store.categories,
-                debts: store.debts,
+                // Del detalle, no del manifiesto: el editor necesita el saldo
+                // para no dejar abonar a una deuda saldada ni pasarse de él.
+                debts: store.debtOptionsWithBalance,
                 // Sin sesión real, todo existe igual: el demo aplica en
                 // memoria y enseña la mecánica completa sin tocar nada.
                 demo: editable ? nil : DemoActions(

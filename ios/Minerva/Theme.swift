@@ -18,6 +18,8 @@ struct Theme {
     let buttonStart: Color  // --button-start
     let buttonEnd: Color    // --button-end
     let tableHead: Color    // --table-head-bg
+    let lockInk: Color      // .entry-auto-badge, color
+    let lockWash: Color     // .entry-auto-badge, background
 
     static let light = Theme(
         bg: Color(hex: 0xF4EFE7),
@@ -33,7 +35,9 @@ struct Theme {
         activeEnd: Color(hex: 0x253245),
         buttonStart: Color(hex: 0x101828),
         buttonEnd: Color(hex: 0x24344C),
-        tableHead: Color(hex: 0x0F172A)
+        tableHead: Color(hex: 0x0F172A),
+        lockInk: Color(hex: 0x4338CA),
+        lockWash: Color(hex: 0x6366F1).opacity(0.16)
     )
 
     static let dark = Theme(
@@ -50,7 +54,9 @@ struct Theme {
         activeEnd: Color(hex: 0x1777C8),
         buttonStart: Color(hex: 0x1D9BF0),
         buttonEnd: Color(hex: 0x1777C8),
-        tableHead: Color(hex: 0x111921)
+        tableHead: Color(hex: 0x111921),
+        lockInk: Color(hex: 0xC7D2FE),
+        lockWash: Color(hex: 0x818CF8).opacity(0.24)
     )
 
     static func of(_ scheme: ColorScheme) -> Theme {
