@@ -180,6 +180,57 @@ final class Outbox: ObservableObject {
         queueUpdate(["paid": .flag(paid)], entry: entry)
     }
 
+    /// El recibido de un ingreso, que es el pagado de un movimiento con otro
+    /// nombre. Va por su propio comando porque los ingresos se direccionan por
+    /// mes y posición, no por índice dentro de "entries".
+    func queueSetReceived(_ received: Bool, income: Income) {
+        guard let path = income.sourcePath,
+              let index = income.sourceIndex,
+              let monthIndex = income.monthIndex else { return }
+
+        let key = "income:\(path)#\(index)"
+        if let previousFile = pending[key]?.fileName {
+            SnapshotStore.removeCommand(named: previousFile)
+        }
+
+        let device = UserDefaults.standard.string(forKey: "deviceName") ?? "iPhone"
+        let stamp = Self.fileStamp.string(from: Date())
+        let action = received ? "recibir" : "desrecibir"
+        let name = "\(stamp)_\(Self.slug(device))_\(action)_\(Self.slug(income.description ?? "ingreso"))_\(UUID().uuidString.prefix(8)).json"
+
+        let payload: [String: Any] = [
+            "id": UUID().uuidString,
+            "action": "update_income",
+            "path": path,
+            "month_index": monthIndex,
+            "income_index": index,
+            "updates": ["received": received],
+            "description": income.description ?? "",
+            "device": device,
+            "created_at": ISO8601DateFormatter().string(from: Date()),
+        ]
+        do {
+            try SnapshotStore.writeCommand(payload, named: name)
+            pending[key] = Pending(
+                values: ["received": .flag(received)],
+                queuedAt: Date(),
+                fileName: name
+            )
+            persist()
+        } catch {
+            // Igual que con los movimientos: sin carpeta no hay optimismo.
+        }
+    }
+
+    /// Lo que este ingreso quedó pidiendo, si hay algo en vuelo.
+    func desiredReceived(for income: Income) -> Bool? {
+        guard let path = income.sourcePath, let index = income.sourceIndex else { return nil }
+        if case .flag(let value)? = pending["income:\(path)#\(index)"]?.values["received"] {
+            return value
+        }
+        return nil
+    }
+
     /// Escribe el comando al buzón y deja el movimiento como "pendiente".
     /// Si ya había un comando en vuelo para el mismo movimiento, el nuevo lo
     /// absorbe: los campos se fusionan y viaja un solo archivo — nunca hay

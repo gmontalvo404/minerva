@@ -211,6 +211,11 @@ struct EditEntryView: View {
                             Text("Marca las deudas a las que aplica este abono. Con una o más, el movimiento queda vinculado.")
                                 .font(.forum(13))
                                 .foregroundStyle(theme.muted)
+                            if linkedDebts.count > 1, linkedHeadroom.isFinite {
+                                Text("Entre las marcadas quedan \(Format.cop(linkedHeadroom)) por pagar.")
+                                    .font(.forum(13))
+                                    .foregroundStyle(theme.muted)
+                            }
                             if let abonoWarning {
                                 Text(abonoWarning)
                                     .font(.forum(13))
@@ -234,7 +239,17 @@ struct EditEntryView: View {
                                             .font(.forum(16))
                                             .foregroundStyle(theme.heading)
                                             .lineLimit(1)
-                                        Spacer()
+                                        Spacer(minLength: 8)
+                                        // Lo que se debe, como en el selector
+                                        // de la web: sin esto se abona a
+                                        // ciegas y solo avisa el aviso.
+                                        if let balance = debt.remainingBalance {
+                                            Text(Format.copNoCode(balance))
+                                                .font(.forum(14))
+                                                .foregroundStyle(theme.muted)
+                                                .lineLimit(1)
+                                                .minimumScaleFactor(0.8)
+                                        }
                                     }
                                     .padding(.horizontal, 14)
                                     .frame(minHeight: 44)

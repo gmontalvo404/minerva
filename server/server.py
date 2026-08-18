@@ -1202,6 +1202,20 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                 index, income_month, self._read_month_entries(cash_flow_root, year, folder)
             )
             summary["source_path_by_type"] = self._month_source_paths(cash_flow_root, year, folder)
+            # Los ingresos viajan con su dirección, igual que los movimientos:
+            # sin ella el teléfono los pinta pero no puede señalar cuál marcar
+            # como recibido. La API de ingresos pide justo estos tres datos.
+            incomes_relative = f"{cash_flow_root}/{year}/incomes/incomes.json"
+            summary["incomes"] = [
+                {
+                    **income,
+                    "source_path": incomes_relative,
+                    "source_index": position,
+                    "month_index": index,
+                }
+                for position, income in enumerate(summary.get("incomes") or [])
+                if isinstance(income, dict)
+            ]
             months.append(summary)
 
         by_type = {key: 0.0 for key in sorted(ALLOWED_TYPES)}
@@ -3366,8 +3380,26 @@ def apply_outbox_command(command_path: Path, host: str) -> None:
         return
 
     action = command.get("action")
-    if action not in {"set_paid", "update_entry", "create_entry", "delete_entry"}:
+    if action not in {"set_paid", "update_entry", "create_entry", "delete_entry", "update_income"}:
         reject_outbox_command(command_path, f"acción desconocida: {action!r}")
+        return
+
+    # Los ingresos salen antes: no viven en "entries" sino en la lista de un mes
+    # dentro de incomes.json, así que nada de lo que viene abajo les sirve.
+    if action == "update_income":
+        month_index = int(command.get("month_index", -1))
+        income_index = int(command.get("income_index", -1))
+        updates = command.get("updates") or {}
+        if not updates or month_index < 0 or income_index < 0:
+            reject_outbox_command(command_path, "comando de ingreso incompleto")
+            return
+        post_outbox_command(command_path, host, "/api/incomes/update", {
+            "path": str(command.get("path", "")),
+            "month_index": month_index,
+            "income_index": income_index,
+            "updates": updates,
+            "origin": command.get("device") or "iPhone",
+        })
         return
 
     relative_path = str(command.get("path", ""))

@@ -4,6 +4,8 @@ import SwiftUI
 /// viaja por el buzón de iCloud.
 struct DemoActions {
     let update: ([String: Outbox.PendingValue], Entry) -> Void
+    /// El recibido de un ingreso: el demo no tiene Mac que confirme.
+    let updateIncome: (Bool, Income) -> Void
     /// (campos, original): con original presente es un duplicado.
     let create: ([String: Outbox.PendingValue], Entry?) -> Void
     let delete: (Entry) -> Void
@@ -392,6 +394,27 @@ struct MonthDetailView: View {
     /// El switch de pagado, separado del indicador: uno informa la
     /// sincronización, el otro cambia el estado. Enseña el valor pedido
     /// mientras el comando viaja.
+    /// El recibido de un ingreso: mismo gesto y mismo optimismo que el pagado
+    /// de un movimiento, solo que el comando viaja por su propia puerta.
+    private func receivedSwitch(for income: Income) -> some View {
+        let shown = outbox.desiredReceived(for: income) ?? (income.received ?? false)
+        return Toggle("", isOn: Binding(
+            get: { shown },
+            set: { wanted in
+                if let demo {
+                    demo.updateIncome(wanted, income)
+                } else {
+                    outbox.queueSetReceived(wanted, income: income)
+                }
+            }
+        ))
+        .labelsHidden()
+        .tint(theme.accent)
+        .scaleEffect(0.58)
+        .frame(width: 32)
+        .disabled(!canEdit || income.sourcePath == nil || income.sourceIndex == nil)
+    }
+
     private func paidSwitch(for entry: Entry) -> some View {
         let shown = outbox.desiredPaid(for: entry) ?? entry.isPaid
         return Toggle("", isOn: Binding(
@@ -547,10 +570,8 @@ struct MonthDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             Eyebrow("Ingresos", theme)
             ForEach(month.incomes) { income in
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Image(systemName: (income.received ?? false) ? "checkmark.circle.fill" : "circle")
-                        .font(.caption)
-                        .foregroundStyle((income.received ?? false) ? theme.positive : theme.muted)
+                HStack(spacing: 10) {
+                    receivedSwitch(for: income)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(income.description ?? "—")
                             .font(.forum(17))

@@ -90,7 +90,7 @@ struct MonthSummary: Decodable, Identifiable {
     var displayTypes: [String: Double]
     var byCategory: [CategoryTotal]
     var entries: [Entry]
-    let incomes: [Income]
+    var incomes: [Income]
     /// A qué archivo escribe cada tipo — lo que un movimiento nuevo necesita
     /// cuando el mes aún no tiene ninguno de dónde copiar la ruta.
     let sourcePathByType: [String: String]?
@@ -287,10 +287,16 @@ struct Income: Decodable, Identifiable {
     let amountUsd: Double?
     let usdCop: Double?
     let amountCop: Double?
-    let received: Bool?
+    var received: Bool?
+    /// Dónde vive, para poder marcarlo recibido desde aquí. La API de ingresos
+    /// direcciona por archivo, mes y posición — no hay id permanente.
+    let sourcePath: String?
+    let sourceIndex: Int?
+    let monthIndex: Int?
 
     private enum CodingKeys: String, CodingKey {
         case description, amountUsd, usdCop, amountCop, received
+        case sourcePath, sourceIndex, monthIndex
     }
 }
 
@@ -316,6 +322,25 @@ enum DemoMath {
     /// Aplica los cambios (las mismas claves que viajan al buzón del live:
     /// description, category, target_type, amount_cop, paid) y devuelve la
     /// respuesta con el mes tocado y el anual ya re-agregados.
+    /// El recibido de un ingreso en el demo. No mueve ningún total — es una
+    /// marca, no plata que entre o salga — así que basta con voltearla donde
+    /// está, sin re-agregar el mes ni el anual.
+    static func applyingReceived(
+        _ received: Bool,
+        to income: Income,
+        in response: DashboardResponse
+    ) -> DashboardResponse {
+        var updated = response
+        for monthIndex in updated.months.indices {
+            guard let position = updated.months[monthIndex].incomes.firstIndex(where: {
+                $0.sourcePath == income.sourcePath && $0.sourceIndex == income.sourceIndex
+            }) else { continue }
+            updated.months[monthIndex].incomes[position].received = received
+            return updated
+        }
+        return response
+    }
+
     static func applying(
         _ changes: [String: Outbox.PendingValue],
         to entry: Entry,
