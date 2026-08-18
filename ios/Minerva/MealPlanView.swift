@@ -63,8 +63,11 @@ struct MealWeekScreen: View {
                             .font(.forum(13))
                             .foregroundStyle(theme.muted)
                             .fixedSize(horizontal: false, vertical: true)
-                    } else if !plan.excludedIngredients.isEmpty {
-                        Text("\(plan.excludedIngredients.count) alimento(s) fuera de la semana.")
+                    } else {
+                        // De cuándo es el plan que se está viendo. Sin esto, un
+                        // snapshot que iCloud aún no bajó se ve idéntico a uno
+                        // al día, y las dos apps parecen no coincidir.
+                        Text(planAge(plan))
                             .font(.forum(13))
                             .foregroundStyle(theme.muted)
                     }
@@ -114,6 +117,18 @@ struct MealWeekScreen: View {
             rolled = nil
             failed = false
         }
+    }
+
+    /// "Plan de hace 3 minutos · 2 alimentos fuera".
+    private func planAge(_ plan: NutritionSnapshot) -> String {
+        var parts: [String] = []
+        if let raw = plan.generatedAt, let date = RootView.isoParser.date(from: raw) {
+            parts.append("Plan " + date.formatted(.relative(presentation: .named).locale(Locale(identifier: "es"))))
+        }
+        if !plan.excludedIngredients.isEmpty {
+            parts.append("\(plan.excludedIngredients.count) alimento(s) fuera")
+        }
+        return parts.joined(separator: " · ")
     }
 
     private var inputWell: some View {
@@ -223,9 +238,12 @@ struct ExclusionsScreen: View {
     }
 
     /// Por etiqueta, con la más poblada primero — el mismo orden de la web.
+    /// Un ingrediente aparece bajo todas las suyas, no solo la primera.
     private static func grouped(_ items: [PlanIngredient]) -> [(label: String, items: [PlanIngredient])] {
         var buckets: [String: [PlanIngredient]] = [:]
-        for item in items { buckets[item.mainLabel, default: []].append(item) }
+        for item in items {
+            for label in item.groupLabels { buckets[label, default: []].append(item) }
+        }
         return buckets
             .map { (label: $0.key, items: $0.value.sorted { $0.name < $1.name }) }
             .sorted { ($0.items.count, $1.label) > ($1.items.count, $0.label) }

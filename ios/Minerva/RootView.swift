@@ -818,7 +818,8 @@ struct RootView: View {
         errorMessage = response == nil ? "El demo empacado no se pudo leer." : nil
     }
 
-    private static let isoParser: ISO8601DateFormatter = {
+    /// Compartido: el plan alimentario lee el mismo sello con el mismo parser.
+    static let isoParser: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
