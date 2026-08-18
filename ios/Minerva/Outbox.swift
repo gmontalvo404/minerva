@@ -261,14 +261,98 @@ final class Outbox: ObservableObject {
 
     /// Los comandos del plan no se fusionan ni dejan fila "pendiente": no
     /// apuntan a un movimiento, y dos dados seguidos son dos tiradas.
-    private func writePlanCommand(_ payload: [String: Any], verb: String) {
+    @discardableResult
+    private func writePlanCommand(_ payload: [String: Any], verb: String) -> String? {
         let device = UserDefaults.standard.string(forKey: "deviceName") ?? "iPhone"
         let stamp = Self.fileStamp.string(from: Date())
         var body = payload
         body["device"] = device
         body["created_at"] = ISO8601DateFormatter().string(from: Date())
         let name = "\(stamp)_\(Self.slug(device))_\(verb)_\(UUID().uuidString.prefix(8)).json"
-        try? SnapshotStore.writeCommand(body, named: name)
+        do {
+            try SnapshotStore.writeCommand(body, named: name)
+            return name
+        } catch {
+            // Sin acceso a la carpeta no hay optimismo que valga.
+            return nil
+        }
+    }
+
+    /// Editar un ingreso. `syncFrom` nombra cuál de los tres montos se tocó,
+    /// para que el servidor recalcule los otros dos — la aritmética de USD,
+    /// tasa y COP vive allá, y copiarla aquí es cómo empiezan a discrepar.
+    func queueUpdateIncome(
+        _ changes: [String: PendingValue],
+        income: Income,
+        syncFrom: String? = nil
+    ) {
+        guard !changes.isEmpty,
+              let path = income.sourcePath,
+              let index = income.sourceIndex,
+              let monthIndex = income.monthIndex else { return }
+
+        let key = "income:\(path)#\(index)"
+        if let previousFile = pending[key]?.fileName {
+            SnapshotStore.removeCommand(named: previousFile)
+        }
+        let merged = (pending[key]?.values ?? [:]).merging(changes) { _, new in new }
+
+        var payload: [String: Any] = [
+            "id": UUID().uuidString,
+            "action": "update_income",
+            "path": path,
+            "month_index": monthIndex,
+            "income_index": index,
+            "updates": merged.mapValues(\.raw),
+            "description": income.description ?? "",
+        ]
+        if let syncFrom { payload["sync_from"] = syncFrom }
+        if let name = writePlanCommand(payload, verb: "editar-ingreso") {
+            pending[key] = Pending(values: merged, queuedAt: Date(), fileName: name)
+            persist()
+        }
+    }
+
+    /// Un ingreso nuevo en el mes. No deja fila pendiente: aún no existe una a
+    /// la que agarrarse — aparece cuando el Mac lo aplique.
+    func queueCreateIncome(_ fields: [String: PendingValue], path: String, monthIndex: Int) {
+        guard !fields.isEmpty, !path.isEmpty else { return }
+        _ = writePlanCommand([
+            "id": UUID().uuidString,
+            "action": "create_income",
+            "path": path,
+            "month_index": monthIndex,
+            "entry": fields.mapValues(\.raw),
+        ], verb: "crear-ingreso")
+    }
+
+    /// Borrar un ingreso.
+    func queueDeleteIncome(_ income: Income) {
+        guard let path = income.sourcePath,
+              let index = income.sourceIndex,
+              let monthIndex = income.monthIndex else { return }
+        let key = "income:\(path)#\(index)"
+        if let previousFile = pending[key]?.fileName {
+            SnapshotStore.removeCommand(named: previousFile)
+        }
+        if let name = writePlanCommand([
+            "id": UUID().uuidString,
+            "action": "delete_income",
+            "path": path,
+            "month_index": monthIndex,
+            "income_index": index,
+            "description": income.description ?? "",
+        ], verb: "borrar-ingreso") {
+            pending[key] = Pending(values: ["deleted": .flag(true)], queuedAt: Date(), fileName: name)
+            persist()
+        }
+    }
+
+    /// Si este ingreso tiene un borrado en vuelo.
+    func incomeIsDeleting(_ income: Income) -> Bool {
+        guard let path = income.sourcePath, let index = income.sourceIndex else { return false }
+        if case .flag(true)? = pending["income:\(path)#\(index)"]?.values["deleted"] { return true }
+        return false
     }
 
     /// Lo que este ingreso quedó pidiendo, si hay algo en vuelo.

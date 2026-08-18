@@ -3643,7 +3643,8 @@ def apply_outbox_command(command_path: Path, host: str) -> None:
 
     action = command.get("action")
     if action not in {"set_paid", "update_entry", "create_entry", "delete_entry",
-                      "update_income", "randomize_nutrition", "set_nutrition_exclusions",
+                      "update_income", "create_income", "delete_income",
+                      "randomize_nutrition", "set_nutrition_exclusions",
                       "settle_debt"}:
         reject_outbox_command(command_path, f"acción desconocida: {action!r}")
         return
@@ -3680,20 +3681,45 @@ def apply_outbox_command(command_path: Path, host: str) -> None:
 
     # Los ingresos salen antes: no viven en "entries" sino en la lista de un mes
     # dentro de incomes.json, así que nada de lo que viene abajo les sirve.
-    if action == "update_income":
+    if action in {"update_income", "create_income", "delete_income"}:
         month_index = int(command.get("month_index", -1))
-        income_index = int(command.get("income_index", -1))
-        updates = command.get("updates") or {}
-        if not updates or month_index < 0 or income_index < 0:
-            reject_outbox_command(command_path, "comando de ingreso incompleto")
+        if month_index < 0:
+            reject_outbox_command(command_path, "comando de ingreso sin mes")
             return
-        post_outbox_command(command_path, host, "/api/incomes/update", {
+        body: dict = {
             "path": str(command.get("path", "")),
             "month_index": month_index,
-            "income_index": income_index,
-            "updates": updates,
             "origin": command.get("device") or "iPhone",
-        })
+        }
+
+        if action == "create_income":
+            entry = command.get("entry")
+            if not isinstance(entry, dict) or not entry:
+                reject_outbox_command(command_path, "ingreso sin contenido")
+                return
+            body["entry"] = entry
+            post_outbox_command(command_path, host, "/api/incomes/create", body)
+            return
+
+        income_index = int(command.get("income_index", -1))
+        if income_index < 0:
+            reject_outbox_command(command_path, "comando de ingreso sin posición")
+            return
+        body["income_index"] = income_index
+
+        if action == "delete_income":
+            post_outbox_command(command_path, host, "/api/incomes/delete", body)
+            return
+
+        updates = command.get("updates") or {}
+        if not updates:
+            reject_outbox_command(command_path, "comando de ingreso sin cambios")
+            return
+        body["updates"] = updates
+        # Cuál de los tres montos se tocó: el servidor recalcula los otros dos.
+        if command.get("sync_from"):
+            body["sync_from"] = str(command["sync_from"])
+        post_outbox_command(command_path, host, "/api/incomes/update", body)
         return
 
     relative_path = str(command.get("path", ""))
