@@ -151,7 +151,7 @@ code {
   min-width: 0;
   min-height: 0;
   display: grid;
-  gap: 14px;
+  gap: 12px;
   overflow: auto;
   overscroll-behavior: contain;
   padding-right: 2px;
@@ -168,10 +168,10 @@ code {
 .control-sidebar__inner {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   height: 100%;
   min-height: 0;
-  padding: 16px;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: calc(var(--radius) + 6px);
   background:
@@ -185,13 +185,13 @@ code {
 
 .control-sidebar__cash-flow {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   transition: opacity 160ms ease, filter 160ms ease;
 }
 
 .control-sidebar__debt-view {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .control-sidebar__cash-flow.is-disabled {
@@ -206,7 +206,7 @@ code {
 
 .control-sidebar__controls {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .control-sidebar__controls--footer {
@@ -229,9 +229,9 @@ code {
 
 .control-sidebar__months {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   min-height: 0;
-  padding: 12px;
+  padding: 10px;
   border: 1px solid var(--line);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.78);
@@ -255,10 +255,10 @@ code {
 
 .control-sidebar .select,
 .control-sidebar .view-button {
-  min-height: 48px;
+  min-height: var(--control-height);
   min-width: 0;
-  font-size: 0.92rem;
-  padding-inline: 0.72rem;
+  font-size: 0.85rem;
+  padding-inline: 0.6rem;
 }
 
 .control-sidebar .view-switch {
@@ -333,12 +333,13 @@ code {
   white-space: normal;
 }
 
-.control-sidebar__annual-button {
+.control-sidebar .control-sidebar__annual-button {
   width: 100%;
-  min-height: 40px;
-  padding: 0.55rem 0.35rem;
-  border-radius: 14px;
-  margin-bottom: 4px;
+  height: var(--control-height);
+  min-height: var(--control-height);
+  padding: 0 0.35rem;
+  border-radius: 13px;
+  margin-bottom: 3px;
   font-size: 0.82rem;
   line-height: 1.1;
 }
@@ -374,7 +375,7 @@ code {
 .hero--section {
   --hero-control-height: 50px;
   --hero-control-padding: 5px;
-  --hero-control-button-height: calc(var(--hero-control-height) - (var(--hero-control-padding) * 2));
+  --hero-control-button-height: var(--control-height);
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: minmax(200px, 224px) minmax(0, 1fr) auto;
@@ -1176,15 +1177,15 @@ code {
 
 .layout {
   display: grid;
-  gap: 24px;
+  gap: 18px;
   margin-top: 0;
 }
 
 .panel {
   display: grid;
-  gap: 18px;
+  gap: 14px;
   align-content: start;
-  padding: 26px;
+  padding: 18px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
@@ -1193,7 +1194,7 @@ code {
 
 .section-head {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   align-items: end;
   grid-template-columns: minmax(0, 1fr) auto;
 }
@@ -1204,7 +1205,7 @@ code {
 
 .chart-grid {
   display: grid;
-  gap: 18px;
+  gap: 14px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -1213,12 +1214,20 @@ code {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* A floor, not a fixed height: the two views fill their row to the same size so
+   the pair of cards does not resize when you switch between them, and anything
+   that ends up taller than the floor still grows instead of being clipped. */
+.chart-grid--annual,
+.chart-grid--monthly {
+  grid-auto-rows: minmax(372px, auto);
+}
+
 .card {
   display: grid;
-  gap: 18px;
+  gap: 14px;
   align-content: start;
   min-width: 0;
-  padding: 22px;
+  padding: 16px;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 22px;
@@ -1267,21 +1276,26 @@ code {
   font-size: 0.92rem;
 }
 
-.chart-grid--annual .card__head > div {
+/* Both cash flow grids reserve the same height for the head, so the chart under
+   it starts at the same place in the annual view and in the monthly one and does
+   not jump when you switch between them. The credit simulator uses .chart-grid
+   too and wants no such reservation, hence the two explicit modifiers. */
+.chart-grid--annual .card__head > div,
+.chart-grid--monthly .card__head > div {
   min-height: 64px;
   align-content: start;
 }
 
 .kpi-grid {
   display: grid;
-  gap: 16px;
+  gap: 12px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .kpi-card {
   display: grid;
-  gap: 8px;
-  padding: 18px;
+  gap: 6px;
+  padding: 14px;
   border: 1px solid var(--line);
   border-radius: 20px;
   background:
@@ -1319,7 +1333,7 @@ code {
 .month-nav.month-nav--sidebar {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 6px;
 }
 
 .month-nav.month-nav--sidebar .month-button {
@@ -1430,12 +1444,13 @@ code {
   display: grid;
   gap: 14px;
   align-items: center;
-  grid-template-columns: minmax(180px, 248px) minmax(0, 1fr);
+  justify-content: center;
+  grid-template-columns: minmax(180px, 248px) minmax(0, 300px);
 }
 
 .donut {
   position: relative;
-  width: min(100%, 280px);
+  width: min(100%, 220px);
   aspect-ratio: 1;
   margin: 0 auto;
   border-radius: 50%;
@@ -1597,7 +1612,7 @@ code {
 
 .data-table th,
 .data-table td {
-  padding: 12px 14px;
+  padding: 9px 11px;
   border-bottom: 1px solid var(--line);
   text-align: left;
   white-space: nowrap;
@@ -1638,13 +1653,13 @@ code {
 }
 
 .data-table--entries {
-  min-width: 1240px;
+  min-width: 920px;
   border-collapse: separate;
   border-spacing: 0 10px;
 }
 
 .data-table--income-entries {
-  min-width: 1220px;
+  min-width: 900px;
 }
 
 .data-table--entries thead th {
@@ -1657,7 +1672,7 @@ code {
   background: var(--table-head-bg);
   border: 0;
   border-radius: 0;
-  padding: 12px 14px;
+  padding: 9px 9px;
 }
 
 .data-table--entries thead th:first-child {
@@ -1669,7 +1684,7 @@ code {
 }
 
 .data-table--entries tbody td {
-  padding: 10px 12px;
+  padding: 8px 9px;
   border-top: 1px solid rgba(17, 24, 39, 0.08);
   border-bottom: 1px solid rgba(17, 24, 39, 0.08);
   background:
@@ -2063,56 +2078,58 @@ tbody tr[data-debt-row="true"].is-drop-after td {
 }
 
 .entry-cell--active {
-  width: 92px;
+  width: 70px;
   text-align: center;
 }
 
 .entry-cell--number {
-  width: 72px;
+  width: 52px;
   text-align: center;
 }
 
 .entry-cell--move {
-  width: 86px;
+  width: 60px;
   text-align: center;
 }
 
 .entry-cell--description {
-  min-width: 260px;
+  min-width: 165px;
 }
 
 .entry-cell--type {
-  min-width: 188px;
+  min-width: 118px;
 }
 
 .entry-cell--category {
-  min-width: 220px;
+  min-width: 132px;
 }
 
 .entry-cell--amount {
-  min-width: 142px;
+  width: 145px;
+  min-width: 110px;
   text-align: right;
 }
 
 .entry-cell--usd {
-  min-width: 132px;
+  width: 128px;
+  min-width: 100px;
   text-align: right;
 }
 
 .entry-cell--fx {
-  min-width: 118px;
+  min-width: 88px;
   text-align: right;
 }
 
 .entry-cell--history {
-  min-width: 104px;
+  min-width: 70px;
   text-align: center;
 }
 
 .entry-cell--actions,
 .entry-cell--delete {
-  width: 62px;
-  min-width: 62px;
+  width: 50px;
+  min-width: 50px;
   text-align: center;
 }
 
@@ -2512,8 +2529,8 @@ tbody tr[data-debt-row="true"].is-drop-after td {
 .entry-select {
   width: 100%;
   min-width: 0;
-  min-height: 46px;
-  padding: 0.72rem 0.9rem;
+  min-height: var(--control-height);
+  padding: 0.5rem 0.62rem;
   border: 1px solid rgba(17, 24, 39, 0.12);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.92);
@@ -2530,7 +2547,7 @@ tbody tr[data-debt-row="true"].is-drop-after td {
 }
 
 .entry-input--amount {
-  min-width: 118px;
+  min-width: 86px;
   text-align: right;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
@@ -2581,9 +2598,9 @@ tbody tr[data-debt-row="true"].is-drop-after td {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  min-height: 46px;
+  min-height: var(--control-height);
   width: 100%;
-  padding: 0.72rem 0.9rem;
+  padding: 0.5rem 0.62rem;
   border: 1px solid rgba(17, 24, 39, 0.08);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.7);
@@ -2611,7 +2628,7 @@ tbody tr[data-debt-row="true"].is-drop-after td {
   content: "";
   position: absolute;
   top: 50%;
-  right: 16px;
+  right: 12px;
   width: 10px;
   height: 10px;
   border-right: 2px solid var(--control-arrow);
@@ -2623,8 +2640,8 @@ tbody tr[data-debt-row="true"].is-drop-after td {
 
 .entry-type-shell .pretty-select__button,
 .entry-select-shell .pretty-select__button {
-  min-height: 46px;
-  padding: 0.72rem 2.75rem 0.72rem 0.9rem;
+  min-height: var(--control-height);
+  padding: 0.5rem 2rem 0.5rem 0.62rem;
   border-color: transparent;
   border-radius: 16px;
   background: transparent;
@@ -2822,18 +2839,21 @@ tbody tr[data-debt-row="true"].is-drop-after td {
 .entry-auto-badge {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
-  padding: 2px 6px;
+  padding: 4px;
   border-radius: 999px;
   background: rgba(99, 102, 241, 0.16);
   color: #4338ca;
-  font-size: 0.65rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  line-height: 1.2;
+  line-height: 1;
   vertical-align: middle;
   cursor: help;
+}
+
+.entry-auto-badge__icon {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
 }
 
 [data-theme="dark"] .entry-auto-badge {

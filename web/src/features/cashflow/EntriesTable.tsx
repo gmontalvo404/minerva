@@ -47,6 +47,24 @@ const ActionsIcon = () => (
   </svg>
 );
 
+/** The padlock on a movement a debt writes: it says "locked", not "automatic",
+ *  which is what the reader actually needs to know before trying to type. */
+const LockIcon = () => (
+  <svg
+    className="entry-auto-badge__icon"
+    aria-hidden="true"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <rect x="4" y="10" width="16" height="11" rx="2.5" />
+    <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+  </svg>
+);
+
 export interface EntriesTableProps {
   entries: PlacedEntry[];
   categoryOptions: CategoryOption[];
@@ -270,8 +288,13 @@ export function EntriesTable({
                 <td className="entry-cell entry-cell--description">
                   <div className="entry-description-shell">
                     {isAuto ? (
-                      <span className="entry-auto-badge" title={lockedTitle}>
-                        {t("entry_auto_badge")}
+                      <span
+                        className="entry-auto-badge"
+                        role="img"
+                        aria-label={lockedTitle}
+                        title={lockedTitle}
+                      >
+                        <LockIcon />
                       </span>
                     ) : null}
                     <input

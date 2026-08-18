@@ -3,7 +3,9 @@
 Cash flow y deudas en el iPhone. La app abre en una portada con dos caminos:
 **Iniciar sesión** (Face ID → tus datos reales) o **Abrir demo** (sin sesión,
 para enseñar la app sin enseñar un peso). Adentro, el selector es el sidebar
-de la web hecho pantalla: año y vista (anual o un mes) en cuadritos. Se puede
+de la web hecho pantalla, con sus dos niveles: sección (Finanzas o el plan
+alimentario), módulo dentro de Finanzas, y luego año y vista (anual o un mes)
+en cuadritos. Se puede
 marcar pagados y editar movimientos: en la sesión real viajan como comandos
 al buzón de iCloud y el Mac los aplica; en el demo aplican al instante en
 memoria (DemoMath re-agrega mes y anual con las fórmulas del servidor) y se

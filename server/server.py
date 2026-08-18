@@ -63,7 +63,19 @@ DEMO_DATA_ROOT = (ROOT / DEMO_URL_PREFIX).resolve()
 YEAR_KEY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$", re.IGNORECASE)
 
 # The sections the React app answers for in the address bar.
-REACT_SECTION_PATHS = frozenset({"cashflow", "debts", "credit", "nutrition"})
+# Every address the React app answers to: the two sections, the modules that
+# live inside Finances, and the flat ones from before Finances existed — those
+# still have to reach the app, which rewrites them to their nested home.
+REACT_SECTION_PATHS = frozenset({
+    "finances",
+    "finances/cashflow",
+    "finances/debts",
+    "finances/credit",
+    "nutrition",
+    "cashflow",
+    "debts",
+    "credit",
+})
 ALLOWED_TYPES = {"needs", "wants", "savings", "debts"}
 # TYPE_ORDER / TYPE_DISPLAY_ORDER in app.js: savings leads the display order.
 TYPE_ORDER = ("needs", "wants", "savings", "debts")
