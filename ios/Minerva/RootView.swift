@@ -15,6 +15,8 @@ final class DashboardStore: ObservableObject {
     @Published var debtDetails: [DebtDetail]?
     /// El plan alimentario, cuando el servidor ya lo exportó.
     @Published var nutrition: NutritionSnapshot?
+    /// A qué archivo apunta finalizar una deuda; vacío en el demo.
+    @Published var debtsPath = ""
 
     /// Las deudas como las necesita el editor: con su saldo. Si el detalle aún
     /// no llegó se cae al manifiesto, que trae id y nombre pero no números —
@@ -712,6 +714,7 @@ struct RootView: View {
             }).value {
                 appliedDebtsStamp = debtsLoad.generatedAt
                 store.debtDetails = debtsLoad.debts
+                store.debtsPath = debtsLoad.path ?? ""
             }
             // El plan alimentario, igual: archivo propio, sello propio, y un
             // servidor sin reiniciar simplemente aún no lo escribió.

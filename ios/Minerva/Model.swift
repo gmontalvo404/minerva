@@ -315,6 +315,8 @@ struct ShoppingLine: Decodable, Identifiable {
 /// lo mismo que contesta /api/debts/detail. El teléfono solo pinta.
 struct DebtsSnapshot: Decodable {
     let generatedAt: String?
+    /// A qué archivo apunta finalizar una deuda.
+    let path: String?
     let debts: [DebtDetail]
 }
 

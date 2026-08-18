@@ -222,6 +222,18 @@ final class Outbox: ObservableObject {
         }
     }
 
+    /// Finalizar una deuda: el servidor escribe el abono que falta en el mes
+    /// corriente. Viaja la intención — el saldo lo calcula quien lo sabe.
+    func queueSettleDebt(path: String, debtId: String) {
+        guard !path.isEmpty, !debtId.isEmpty else { return }
+        writePlanCommand([
+            "id": UUID().uuidString,
+            "action": "settle_debt",
+            "path": path,
+            "debt_id": debtId,
+        ], verb: "finalizar-deuda")
+    }
+
     /// El dado del plan alimentario. Con `dayIndex` tira un día; sin él, la
     /// semana entera. Viaja la intención, no el plan: el teléfono no lo tiene,
     /// y quien sabe qué comidas caben es el servidor.

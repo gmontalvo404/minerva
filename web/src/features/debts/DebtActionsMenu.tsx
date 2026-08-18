@@ -9,6 +9,8 @@ export interface DebtActionsMenuProps {
   onClose: () => void;
   onView: () => void;
   onLinkCashFlow: () => void;
+  /** Ausente cuando la deuda ya está saldada: no hay nada que cerrar. */
+  onSettle?: () => void;
   t: Translate;
 }
 
@@ -16,7 +18,7 @@ export interface DebtActionsMenuProps {
  * `div.entry-actions-menu` for a debt row, the two items openDebtActionsMenu
  * builds: view the detail, or edit which cash flow row pays it.
  */
-export function DebtActionsMenu({ anchor, onClose, onView, onLinkCashFlow, t }: DebtActionsMenuProps) {
+export function DebtActionsMenu({ anchor, onClose, onView, onLinkCashFlow, onSettle, t }: DebtActionsMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
 
@@ -77,6 +79,11 @@ export function DebtActionsMenu({ anchor, onClose, onView, onLinkCashFlow, t }: 
       <button type="button" role="menuitem" className="entry-actions-menu__item" onClick={onLinkCashFlow}>
         {t("debt_action_link_cash_flow")}
       </button>
+      {onSettle ? (
+        <button type="button" role="menuitem" className="entry-actions-menu__item" onClick={onSettle}>
+          {t("debt_action_settle")}
+        </button>
+      ) : null}
     </div>,
     document.body,
   );
