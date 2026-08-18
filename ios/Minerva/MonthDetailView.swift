@@ -6,6 +6,7 @@ struct DemoActions {
     let update: ([String: Outbox.PendingValue], Entry) -> Void
     /// El recibido de un ingreso: el demo no tiene Mac que confirme.
     let updateIncome: (Bool, Income) -> Void
+
     /// (campos, original): con original presente es un duplicado.
     let create: ([String: Outbox.PendingValue], Entry?) -> Void
     let delete: (Entry) -> Void
@@ -30,6 +31,8 @@ struct MonthDetailView: View {
     @Environment(\.colorScheme) private var scheme
     @ObservedObject private var outbox = Outbox.shared
     @State private var editingEntry: Entry?
+    @State private var editingIncome: Income?
+    @State private var creatingIncome = false
     @State private var showCreate = false
     @State private var entryToDelete: Entry?
     @State private var historyEntry: Entry?
@@ -72,6 +75,18 @@ struct MonthDetailView: View {
                     } label: {
                         Label("Nuevo movimiento", systemImage: "plus")
                     }
+                }
+            }
+        }
+        .sheet(item: $editingIncome) { income in
+            EditIncomeView(income: income) { fields, syncFrom in
+                Outbox.shared.queueUpdateIncome(fields, income: income, syncFrom: syncFrom)
+            }
+        }
+        .sheet(isPresented: $creatingIncome) {
+            EditIncomeView(income: nil) { fields, _ in
+                if let path = month.incomes.first?.sourcePath {
+                    Outbox.shared.queueCreateIncome(fields, path: path, monthIndex: month.index)
                 }
             }
         }
@@ -568,7 +583,22 @@ struct MonthDetailView: View {
 
     private var incomeList: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Eyebrow("Ingresos", theme)
+            HStack {
+                Eyebrow("Ingresos", theme)
+                Spacer()
+                if editable {
+                    Button {
+                        creatingIncome = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(theme.accent)
+                            .frame(width: 32, height: 32)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Agregar ingreso")
+                }
+            }
             ForEach(month.incomes) { income in
                 HStack(spacing: 10) {
                     receivedSwitch(for: income)
@@ -588,6 +618,22 @@ struct MonthDetailView: View {
                         .font(.forum(17))
                         .foregroundStyle(theme.heading)
                         .lineLimit(1)
+                }
+                .opacity(outbox.incomeIsDeleting(income) ? 0.45 : 1)
+                // El interruptor se queda con su toque; el resto de la fila
+                // abre el editor, como en los movimientos.
+                .contentShape(Rectangle())
+                .onTapGesture { if editable { editingIncome = income } }
+                .contextMenu {
+                    // Solo en la sesión real: el demo no recalcula los totales
+                    // del mes cuando cambia un ingreso, y enseñarlo torcido es
+                    // peor que no ofrecerlo.
+                    if editable {
+                        Button("Editar") { editingIncome = income }
+                        Button("Borrar", role: .destructive) {
+                            Outbox.shared.queueDeleteIncome(income)
+                        }
+                    }
                 }
             }
         }
