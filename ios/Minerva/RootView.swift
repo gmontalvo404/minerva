@@ -13,6 +13,8 @@ final class DashboardStore: ObservableObject {
     @Published var debts: [DebtOption] = []
     /// El módulo de deudas completo; nil mientras el snapshot no llegue.
     @Published var debtDetails: [DebtDetail]?
+    /// El plan alimentario, cuando el servidor ya lo exportó.
+    @Published var nutrition: NutritionSnapshot?
 
     /// Las deudas como las necesita el editor: con su saldo. Si el detalle aún
     /// no llegó se cae al manifiesto, que trae id y nombre pero no números —
@@ -171,6 +173,8 @@ struct RootView: View {
     @State private var appliedYear: String?
     /// El generated_at del snapshot de deudas aplicado — mismo truco.
     @State private var appliedDebtsStamp: String?
+    /// El generated_at del plan alimentario aplicado — mismo truco.
+    @State private var appliedNutritionStamp: String?
     @State private var loading = false
     @State private var errorMessage: String?
     @State private var year: String?
@@ -199,6 +203,23 @@ struct RootView: View {
         case month(Int)
         case debts(canceled: Bool)
         case debt(String)
+        case mealPlan(MealPlanScreen)
+    }
+
+    /// Las cuatro caras del plan alimentario, en el orden del selector.
+    enum MealPlanScreen: String, CaseIterable, Identifiable, Hashable {
+        case week, shopping, catalog, rules
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .week: return "Semana"
+            case .shopping: return "Mercado"
+            case .catalog: return "Comidas"
+            case .rules: return "Reglas"
+            }
+        }
     }
 
     /// Cambia la carpeta o el año → recarga sola.
@@ -370,7 +391,17 @@ struct RootView: View {
             }
 
             if section != .finances {
-                comingSoon(label: section.label, icon: section.icon)
+                // El plan alimentario ya no avisa: elige cuál de sus cuatro
+                // caras abrir, con el mismo gesto que Vista en deudas.
+                Eyebrow("Vista", theme)
+                LazyVGrid(columns: pairColumns, spacing: 8) {
+                    ForEach(MealPlanScreen.allCases) { screen in
+                        NavigationLink(value: Route.mealPlan(screen)) {
+                            SelectorBox(label: screen.label, active: false, theme: theme)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
             } else {
                 Eyebrow("Módulo", theme)
                 LazyVGrid(columns: pairColumns, spacing: 8) {
@@ -464,6 +495,13 @@ struct RootView: View {
             DebtsListScreen(store: store, canceled: canceled, live: dataset == .live)
         case .debt(let id):
             DebtScheduleScreen(store: store, debtId: id)
+        case .mealPlan(let screen):
+            switch screen {
+            case .week: MealWeekScreen(store: store)
+            case .shopping: ShoppingListScreen(store: store)
+            case .catalog: MealCatalogScreen(store: store)
+            case .rules: GroundRulesScreen(store: store)
+            }
         }
     }
 
@@ -668,6 +706,15 @@ struct RootView: View {
                 appliedDebtsStamp = debtsLoad.generatedAt
                 store.debtDetails = debtsLoad.debts
             }
+            // El plan alimentario, igual: archivo propio, sello propio, y un
+            // servidor sin reiniciar simplemente aún no lo escribió.
+            let nutritionStamp = appliedNutritionStamp
+            if let plan = try? await Task.detached(priority: silent ? .utility : .userInitiated, operation: {
+                try SnapshotStore.loadNutrition(unlessStamp: nutritionStamp)
+            }).value {
+                appliedNutritionStamp = plan.generatedAt
+                store.nutrition = plan
+            }
         } catch SnapshotError.missing {
             // El formato por año aún no existe: servidor sin reiniciar. El
             // archivo único de antes sigue siendo la verdad mientras tanto.
@@ -733,6 +780,7 @@ struct RootView: View {
         store.categories = snapshot.categories ?? []
         store.debts = snapshot.debts ?? []
         store.debtDetails = snapshot.debtsDetail ?? []
+        store.nutrition = snapshot.nutrition
         generatedAt = nil
         errorMessage = response == nil ? "El demo empacado no se pudo leer." : nil
     }

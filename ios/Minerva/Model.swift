@@ -28,6 +28,8 @@ struct MobileSnapshot: Decodable {
     let debts: [DebtOption]?
     /// El módulo de deudas del demo, ya calculado.
     let debtsDetail: [DebtDetail]?
+    /// El plan alimentario del demo, ya resuelto.
+    let nutrition: NutritionSnapshot?
 }
 
 struct SnapshotDataset: Decodable {
@@ -163,6 +165,135 @@ struct DebtOption: Decodable, Identifiable {
         self.name = name
         self.remainingBalance = remainingBalance
     }
+}
+
+/// mobile/nutrition.json: el plan alimentario con la semana ya resuelta y la
+/// lista de compras ya sumada. Como en deudas, el teléfono no calcula nada:
+/// solo pinta lo que el servidor dejó escrito.
+struct NutritionSnapshot: Decodable {
+    let generatedAt: String?
+    var week: [PlanDay] = []
+    var catalog: [String: [PlannedMeal]] = [:]
+    /// Pares [título, texto], tal como los guarda el plan.
+    var groundRules: [[String]] = []
+    var condimentsYes = ""
+    var condimentsNo = ""
+    var excludedIngredients: [String] = []
+    var shopping: ShoppingList?
+
+    private enum CodingKeys: String, CodingKey {
+        case generatedAt, week, catalog, groundRules
+        case condimentsYes, condimentsNo, excludedIngredients, shopping
+    }
+
+    /// A mano y no sintetizado: Decodable exige la clave aunque la propiedad
+    /// tenga valor por defecto, y un dataset sin plan alimentario manda un
+    /// objeto vacío. Sin esto, no tener plan sería un error de decodificación
+    /// en vez de una sección vacía.
+    init(from decoder: Decoder) throws {
+        let box = try decoder.container(keyedBy: CodingKeys.self)
+        generatedAt = try box.decodeIfPresent(String.self, forKey: .generatedAt)
+        week = try box.decodeIfPresent([PlanDay].self, forKey: .week) ?? []
+        catalog = try box.decodeIfPresent([String: [PlannedMeal]].self, forKey: .catalog) ?? [:]
+        groundRules = try box.decodeIfPresent([[String]].self, forKey: .groundRules) ?? []
+        condimentsYes = try box.decodeIfPresent(String.self, forKey: .condimentsYes) ?? ""
+        condimentsNo = try box.decodeIfPresent(String.self, forKey: .condimentsNo) ?? ""
+        excludedIngredients = try box.decodeIfPresent([String].self, forKey: .excludedIngredients) ?? []
+        shopping = try box.decodeIfPresent(ShoppingList.self, forKey: .shopping)
+    }
+
+    /// Sin plan que mostrar.
+    var isEmpty: Bool { week.isEmpty && groundRules.isEmpty && (shopping?.lines.isEmpty ?? true) }
+
+    /// Las comidas de un tipo, en el orden del catálogo.
+    func catalog(for slot: MealSlot) -> [PlannedMeal] {
+        catalog[slot.rawValue] ?? []
+    }
+}
+
+/// Los cuatro momentos del día, en el orden en que se comen.
+enum MealSlot: String, CaseIterable, Identifiable {
+    case breakfast, lunch, snack, dinner
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .breakfast: return "Desayuno"
+        case .lunch: return "Almuerzo"
+        case .snack: return "Snack"
+        case .dinner: return "Cena"
+        }
+    }
+
+    var plural: String {
+        switch self {
+        case .breakfast: return "Desayunos"
+        case .lunch: return "Almuerzos"
+        case .snack: return "Snacks"
+        case .dinner: return "Cenas"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .breakfast: return "sun.horizon"
+        case .lunch: return "fork.knife"
+        case .snack: return "leaf"
+        case .dinner: return "moon"
+        }
+    }
+}
+
+struct PlanDay: Decodable, Identifiable {
+    let day: String
+    let meals: [PlannedMeal]
+
+    var id: String { day }
+    /// Lo que cuesta el día: la suma de sus comidas.
+    var cost: Double { meals.reduce(0) { $0 + $1.cost } }
+}
+
+struct PlannedMeal: Decodable, Identifiable {
+    let slot: String
+    let id: String
+    let name: String
+    let description: String
+    let cost: Double
+
+    var mealSlot: MealSlot? { MealSlot(rawValue: slot) }
+}
+
+struct ShoppingList: Decodable {
+    let lines: [ShoppingLine]
+    let total: Double
+    let weeklyCost: Double
+    let dailyAverage: Double
+    let assignedMeals: Int
+    let totalSlots: Int
+
+    /// Agrupada por tienda, que es como se compra.
+    var byStore: [(store: String, lines: [ShoppingLine])] {
+        var order: [String] = []
+        var grouped: [String: [ShoppingLine]] = [:]
+        for line in lines {
+            let store = line.store.isEmpty ? "Sin tienda" : line.store
+            if grouped[store] == nil { order.append(store) }
+            grouped[store, default: []].append(line)
+        }
+        return order.map { ($0, grouped[$0] ?? []) }
+    }
+}
+
+struct ShoppingLine: Decodable, Identifiable {
+    let id: String
+    let name: String
+    let unit: String
+    let category: String
+    let store: String
+    let qty: Double
+    let price: Double
+    let total: Double
 }
 
 /// mobile/debts.json: las deudas con su plan ya calculado por el servidor —

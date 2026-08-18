@@ -264,6 +264,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                     "categories": self._shared_category_names(),
                     "debts": self._mobile_debt_catalog(DEMO_URL_PREFIX),
                     "debts_detail": self._mobile_debts_detail(DEMO_URL_PREFIX),
+                    "nutrition": self._mobile_nutrition(DEMO_URL_PREFIX),
                     "demo": self._snapshot_dataset(f"{DEMO_URL_PREFIX}/cash_flow"),
                 },
             )
@@ -1297,6 +1298,91 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
     def _handle_get_shopping_list(self, query: dict) -> None:
         """The week's shopping list, priced with the ingredient catalog."""
         relative_path = (query.get("path") or [f"{DATA_URL_PREFIX}/nutrition/plan.json"])[0]
+        self._send_json(HTTPStatus.OK, {"ok": True, **self._build_shopping_list(relative_path)})
+
+    MEAL_SLOTS = ("breakfast", "lunch", "snack", "dinner")
+
+    def _mobile_nutrition(self, prefix: str) -> dict:
+        """El plan alimentario masticado para el teléfono.
+
+        La semana llega con sus comidas ya resueltas — nombre, descripción y
+        cuánto cuesta cada una — para que iOS no tenga que cruzar ids contra
+        el catálogo ni multiplicar precios. Misma regla que en deudas: el
+        servidor piensa, el teléfono pinta.
+        """
+        relative_path = f"{prefix}/nutrition/plan.json"
+        try:
+            plan = json.loads(self._resolve_data_path(relative_path).read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+            return {}
+        if not isinstance(plan, dict):
+            return {}
+
+        shopping = self._build_shopping_list(relative_path)
+        costs = shopping.get("meal_costs") or {}
+        meals = plan.get("meals") or {}
+
+        def described(slot: str, meal_id) -> dict | None:
+            if not meal_id:
+                return None
+            meal = next(
+                (item for item in meals.get(slot) or []
+                 if isinstance(item, dict) and str(item.get("id", "")) == str(meal_id)),
+                None,
+            )
+            if meal is None:
+                return None
+            return {
+                "slot": slot,
+                "id": str(meal.get("id", "")),
+                "name": meal.get("name", ""),
+                "description": meal.get("description", ""),
+                "cost": costs.get(str(meal.get("id", "")), 0.0),
+            }
+
+        week = [
+            {
+                "day": day.get("day", ""),
+                "meals": [m for m in (described(slot, day.get(slot)) for slot in self.MEAL_SLOTS) if m],
+            }
+            for day in plan.get("week") or []
+            if isinstance(day, dict)
+        ]
+
+        catalog = {
+            slot: [
+                m for m in (described(slot, item.get("id")) for item in meals.get(slot) or []
+                            if isinstance(item, dict))
+                if m
+            ]
+            for slot in self.MEAL_SLOTS
+        }
+
+        condiments = plan.get("condiments")
+        return {
+            "week": week,
+            "catalog": catalog,
+            # Pares [título, texto]; el teléfono los pinta tal cual.
+            "ground_rules": [
+                list(rule)[:2] for rule in plan.get("ground_rules") or []
+                if isinstance(rule, (list, tuple)) and len(rule) >= 2
+            ],
+            # Prosa, no listas: el plan las escribe como una frase corrida y
+            # así se leen mejor. Se pasan tal cual en vez de partirlas por comas
+            # y fingir una estructura que el archivo no tiene.
+            "condiments_yes": str((condiments or {}).get("yes") or "") if isinstance(condiments, dict) else "",
+            "condiments_no": str((condiments or {}).get("no") or "") if isinstance(condiments, dict) else "",
+            "excluded_ingredients": plan.get("excluded_ingredients") or [],
+            "shopping": {key: value for key, value in shopping.items() if key != "path"},
+        }
+
+    def _build_shopping_list(self, relative_path: str) -> dict:
+        """Lo que cuesta la semana, ingrediente por ingrediente.
+
+        Sale del handler para que el snapshot del teléfono pueda pedir lo
+        mismo: la cuenta se hace una vez y en un solo sitio, que es la regla
+        de la casa.
+        """
         target_path = self._resolve_data_path(relative_path)
         try:
             plan = json.loads(target_path.read_text(encoding="utf-8"))
@@ -1379,20 +1465,16 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         ]
         weekly_cost = sum(meal_costs.get(meal_id, 0.0) for meal_id in assigned)
 
-        self._send_json(
-            HTTPStatus.OK,
-            {
-                "ok": True,
-                "path": relative_path,
-                "lines": lines,
-                "total": round(sum(line["total"] for line in lines), 2),
-                "meal_costs": meal_costs,
-                "weekly_cost": round(weekly_cost, 2),
-                "daily_average": round(weekly_cost / len(days), 2) if days else 0.0,
-                "assigned_meals": len(assigned),
-                "total_slots": len(days) * 4,
-            },
-        )
+        return {
+            "path": relative_path,
+            "lines": lines,
+            "total": round(sum(line["total"] for line in lines), 2),
+            "meal_costs": meal_costs,
+            "weekly_cost": round(weekly_cost, 2),
+            "daily_average": round(weekly_cost / len(days), 2) if days else 0.0,
+            "assigned_meals": len(assigned),
+            "total_slots": len(days) * 4,
+        }
 
     def _handle_simulate_debt(self, query: dict) -> None:
         """The credit simulator, priced by the same engine as a real debt.
@@ -3157,11 +3239,19 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                     {"ok": True, "debts": self._mobile_debts_detail(DATA_URL_PREFIX)},
                     stamp,
                 )
+                # El plan alimentario, con la misma forma: su archivo, su sello,
+                # y solo se reescribe si de verdad cambió.
+                nutrition_stamp = self._write_if_changed(
+                    target_dir / "nutrition.json",
+                    {"ok": True, **self._mobile_nutrition(DATA_URL_PREFIX)},
+                    stamp,
+                )
                 manifest = {
                     "years": live["years"],
                     "categories": self._shared_category_names(),
                     "debts": self._mobile_debt_catalog(DATA_URL_PREFIX),
                     "year_stamps": year_stamps,
+                    "nutrition_stamp": nutrition_stamp,
                 }
                 self._write_if_changed(target_dir / "manifest.json", manifest, stamp)
                 # Los formatos anteriores ya no se escriben; si queda alguno

@@ -207,6 +207,16 @@ enum SnapshotStore {
         return try makeDecoder().decode(DebtsSnapshot.self, from: payload)
     }
 
+    /// mobile/nutrition.json: el plan alimentario ya resuelto, en su propio
+    /// archivo autoestampado — mismo trato que deudas.
+    static func loadNutrition(unlessStamp stamp: String? = nil) throws -> NutritionSnapshot? {
+        let payload = try coordinatedRead("mobile/nutrition.json")
+        if let stamp, let quick = quickStamp(of: payload), quick == stamp {
+            return nil
+        }
+        return try makeDecoder().decode(NutritionSnapshot.self, from: payload)
+    }
+
     /// El formato viejo de un solo archivo, para mientras el servidor no se
     /// haya reiniciado con el partido por año. Con `unlessStamp`, si trae ese
     /// mismo generated_at devuelve nil sin gastar en decodificar.
