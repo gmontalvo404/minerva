@@ -173,6 +173,31 @@ private struct ProgressTrack: View {
 
 /// La deuda empujada, resuelta contra el store en cada re-render: un
 /// snapshot nuevo la repinta sola, como el mes.
+/// La lista de deudas hecha pantalla. Se abre desde Vista en la portada —
+/// Activas o Canceladas — en vez de aparecer debajo del selector, igual que
+/// el resumen anual y los meses de cash flow.
+struct DebtsListScreen: View {
+    @ObservedObject var store: DashboardStore
+    let canceled: Bool
+    let live: Bool
+    @Environment(\.colorScheme) private var scheme
+
+    private var theme: Theme { .of(scheme) }
+
+    var body: some View {
+        ZStack {
+            theme.bg.ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    DebtsHome(debts: store.debtDetails, live: live, showCanceled: canceled, theme: theme)
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 10)
+            }
+        }
+    }
+}
+
 struct DebtScheduleScreen: View {
     @ObservedObject var store: DashboardStore
     let debtId: String

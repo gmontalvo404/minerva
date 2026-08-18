@@ -157,9 +157,6 @@ struct RootView: View {
     @State private var year: String?
     @State private var section: AppSection = .finances
     @State private var module: Module = .cashflow
-    /// Qué lista de deudas se ve. Vive aquí y no en DebtsHome porque quien
-    /// pinta el botón es el selector de arriba, con los demás.
-    @State private var showCanceledDebts = false
     @State private var showSettings = false
     @Environment(\.colorScheme) private var scheme
     @Environment(\.scenePhase) private var scenePhase
@@ -181,6 +178,7 @@ struct RootView: View {
     enum Route: Hashable {
         case annual
         case month(Int)
+        case debts(canceled: Bool)
         case debt(String)
     }
 
@@ -297,29 +295,27 @@ struct RootView: View {
         } else if let message = errorMessage {
             errorView(message)
         } else if let response {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    selector(for: response)
-                    if section == .finances, module == .debts {
-                        DebtsHome(
-                            debts: store.debtDetails,
-                            live: dataset == .live,
-                            showCanceled: showCanceledDebts,
-                            theme: theme
-                        )
+            // La tarjeta del selector se estira hasta abajo, así el pie con
+            // el "Calculado hace…" queda al final de la pantalla y no colgando
+            // a media altura cuando el módulo abierto tiene pocos cuadritos.
+            GeometryReader { geo in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        selector(for: response)
+                        if dataset == .demo {
+                            Text("Estás viendo el demo.")
+                                .font(.forum(14))
+                                .foregroundStyle(theme.muted)
+                                .frame(maxWidth: .infinity)
+                        }
+                        snapshotFooter
                     }
-                    if dataset == .demo {
-                        Text("Estás viendo el demo.")
-                            .font(.forum(14))
-                            .foregroundStyle(theme.muted)
-                            .frame(maxWidth: .infinity)
-                    }
-                    snapshotFooter
+                    .padding(.horizontal)
+                    .padding(.vertical, 10)
+                    .frame(minHeight: geo.size.height, alignment: .top)
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 10)
+                .refreshable { await load() }
             }
-            .refreshable { await load() }
         } else if loading {
             ProgressView("Cargando…")
                 .tint(theme.accent)
@@ -370,16 +366,12 @@ struct RootView: View {
                     // elegir cuál se ve es un selector como los otros.
                     Eyebrow("Vista", theme)
                     LazyVGrid(columns: pairColumns, spacing: 8) {
-                        Button {
-                            showCanceledDebts = false
-                        } label: {
-                            SelectorBox(label: "Activas", active: !showCanceledDebts, theme: theme)
+                        NavigationLink(value: Route.debts(canceled: false)) {
+                            SelectorBox(label: "Activas", active: false, theme: theme)
                         }
                         .buttonStyle(.plain)
-                        Button {
-                            showCanceledDebts = true
-                        } label: {
-                            SelectorBox(label: "Canceladas", active: showCanceledDebts, theme: theme)
+                        NavigationLink(value: Route.debts(canceled: true)) {
+                            SelectorBox(label: "Canceladas", active: false, theme: theme)
                         }
                         .buttonStyle(.plain)
                     }
@@ -431,6 +423,7 @@ struct RootView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .card(theme)
     }
 
@@ -444,6 +437,8 @@ struct RootView: View {
             AnnualScreen(store: store)
         case .month(let index):
             MonthDetailScreen(store: store, monthIndex: index, editable: dataset == .live)
+        case .debts(let canceled):
+            DebtsListScreen(store: store, canceled: canceled, live: dataset == .live)
         case .debt(let id):
             DebtScheduleScreen(store: store, debtId: id)
         }
