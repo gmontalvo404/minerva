@@ -222,6 +222,43 @@ final class Outbox: ObservableObject {
         }
     }
 
+    /// El dado del plan alimentario. Con `dayIndex` tira un día; sin él, la
+    /// semana entera. Viaja la intención, no el plan: el teléfono no lo tiene,
+    /// y quien sabe qué comidas caben es el servidor.
+    func queueRandomizeNutrition(path: String, dayIndex: Int? = nil) {
+        guard !path.isEmpty else { return }
+        var payload: [String: Any] = [
+            "id": UUID().uuidString,
+            "action": "randomize_nutrition",
+            "path": path,
+        ]
+        if let dayIndex { payload["day_index"] = dayIndex }
+        writePlanCommand(payload, verb: dayIndex == nil ? "randomizar-semana" : "randomizar-dia")
+    }
+
+    /// Qué alimentos quedan fuera de la semana.
+    func queueNutritionExclusions(path: String, excluded: [String]) {
+        guard !path.isEmpty else { return }
+        writePlanCommand([
+            "id": UUID().uuidString,
+            "action": "set_nutrition_exclusions",
+            "path": path,
+            "excluded": excluded,
+        ], verb: "excluir-alimentos")
+    }
+
+    /// Los comandos del plan no se fusionan ni dejan fila "pendiente": no
+    /// apuntan a un movimiento, y dos dados seguidos son dos tiradas.
+    private func writePlanCommand(_ payload: [String: Any], verb: String) {
+        let device = UserDefaults.standard.string(forKey: "deviceName") ?? "iPhone"
+        let stamp = Self.fileStamp.string(from: Date())
+        var body = payload
+        body["device"] = device
+        body["created_at"] = ISO8601DateFormatter().string(from: Date())
+        let name = "\(stamp)_\(Self.slug(device))_\(verb)_\(UUID().uuidString.prefix(8)).json"
+        try? SnapshotStore.writeCommand(body, named: name)
+    }
+
     /// Lo que este ingreso quedó pidiendo, si hay algo en vuelo.
     func desiredReceived(for income: Income) -> Bool? {
         guard let path = income.sourcePath, let index = income.sourceIndex else { return nil }

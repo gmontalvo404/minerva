@@ -7,6 +7,7 @@ import os
 import re
 import socket
 import subprocess
+import random
 import sys
 import threading
 from copy import deepcopy
@@ -264,6 +265,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                     "categories": self._shared_category_names(),
                     "debts": self._mobile_debt_catalog(DEMO_URL_PREFIX),
                     "debts_detail": self._mobile_debts_detail(DEMO_URL_PREFIX),
+                    "nutrition": self._mobile_nutrition(DEMO_URL_PREFIX),
                     "demo": self._snapshot_dataset(f"{DEMO_URL_PREFIX}/cash_flow"),
                 },
             )
@@ -366,6 +368,12 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                 return
             if self.path == "/api/debts/sync_cash_flow":
                 self._handle_sync_debt_cash_flow()
+                return
+            if self.path == "/api/nutrition/randomize":
+                self._handle_randomize_nutrition()
+                return
+            if self.path == "/api/nutrition/exclusions":
+                self._handle_set_nutrition_exclusions()
                 return
             if self.path == "/api/nutrition/save":
                 self._handle_save_nutrition()
@@ -1297,6 +1305,106 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
     def _handle_get_shopping_list(self, query: dict) -> None:
         """The week's shopping list, priced with the ingredient catalog."""
         relative_path = (query.get("path") or [f"{DATA_URL_PREFIX}/nutrition/plan.json"])[0]
+        self._send_json(HTTPStatus.OK, {"ok": True, **self._build_shopping_list(relative_path)})
+
+    MEAL_SLOTS = ("breakfast", "lunch", "snack", "dinner")
+
+    def _mobile_nutrition(self, prefix: str) -> dict:
+        """El plan alimentario masticado para el teléfono.
+
+        La semana llega con sus comidas ya resueltas — nombre, descripción y
+        cuánto cuesta cada una — para que iOS no tenga que cruzar ids contra
+        el catálogo ni multiplicar precios. Misma regla que en deudas: el
+        servidor piensa, el teléfono pinta.
+        """
+        relative_path = f"{prefix}/nutrition/plan.json"
+        try:
+            plan = json.loads(self._resolve_data_path(relative_path).read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+            return {}
+        if not isinstance(plan, dict):
+            return {}
+
+        shopping = self._build_shopping_list(relative_path)
+        costs = shopping.get("meal_costs") or {}
+        meals = plan.get("meals") or {}
+
+        def described(slot: str, meal_id) -> dict | None:
+            if not meal_id:
+                return None
+            meal = next(
+                (item for item in meals.get(slot) or []
+                 if isinstance(item, dict) and str(item.get("id", "")) == str(meal_id)),
+                None,
+            )
+            if meal is None:
+                return None
+            return {
+                "slot": slot,
+                "id": str(meal.get("id", "")),
+                "name": meal.get("name", ""),
+                "description": meal.get("description", ""),
+                "cost": costs.get(str(meal.get("id", "")), 0.0),
+            }
+
+        week = [
+            {
+                "day": day.get("day", ""),
+                "meals": [m for m in (described(slot, day.get(slot)) for slot in self.MEAL_SLOTS) if m],
+            }
+            for day in plan.get("week") or []
+            if isinstance(day, dict)
+        ]
+
+        catalog = {
+            slot: [
+                m for m in (described(slot, item.get("id")) for item in meals.get(slot) or []
+                            if isinstance(item, dict))
+                if m
+            ]
+            for slot in self.MEAL_SLOTS
+        }
+
+        condiments = plan.get("condiments")
+        return {
+            # A qué archivo apuntan el dado y las exclusiones. El teléfono lo
+            # devuelve tal cual: no tiene por qué saber cómo se llama el dataset.
+            "plan_path": relative_path,
+            "week": week,
+            "catalog": catalog,
+            # Pares [título, texto]; el teléfono los pinta tal cual.
+            "ground_rules": [
+                list(rule)[:2] for rule in plan.get("ground_rules") or []
+                if isinstance(rule, (list, tuple)) and len(rule) >= 2
+            ],
+            # Prosa, no listas: el plan las escribe como una frase corrida y
+            # así se leen mejor. Se pasan tal cual en vez de partirlas por comas
+            # y fingir una estructura que el archivo no tiene.
+            "condiments_yes": str((condiments or {}).get("yes") or "") if isinstance(condiments, dict) else "",
+            "condiments_no": str((condiments or {}).get("no") or "") if isinstance(condiments, dict) else "",
+            "excluded_ingredients": plan.get("excluded_ingredients") or [],
+            # El catálogo, para poder excluir desde el teléfono. Con su etiqueta
+            # ya resuelta: el archivo la guarda como texto o como lista.
+            "ingredients": [
+                {
+                    "id": str(item.get("id", "")),
+                    "name": item.get("name", ""),
+                    "labels": self._ingredient_labels(item),
+                    "store": item.get("store", ""),
+                }
+                for item in plan.get("ingredients") or []
+                if isinstance(item, dict) and item.get("id")
+            ],
+            "shopping": {key: value for key, value in shopping.items() if key != "path"},
+        }
+
+    def _build_shopping_list(self, relative_path: str) -> dict:
+        """Lo que cuesta la semana, ingrediente por ingrediente.
+
+        Sale del handler para que el snapshot del teléfono pueda pedir lo
+        mismo: la cuenta se hace una vez y en un solo sitio, que es la regla
+        de la casa.
+        """
         target_path = self._resolve_data_path(relative_path)
         try:
             plan = json.loads(target_path.read_text(encoding="utf-8"))
@@ -1379,20 +1487,16 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         ]
         weekly_cost = sum(meal_costs.get(meal_id, 0.0) for meal_id in assigned)
 
-        self._send_json(
-            HTTPStatus.OK,
-            {
-                "ok": True,
-                "path": relative_path,
-                "lines": lines,
-                "total": round(sum(line["total"] for line in lines), 2),
-                "meal_costs": meal_costs,
-                "weekly_cost": round(weekly_cost, 2),
-                "daily_average": round(weekly_cost / len(days), 2) if days else 0.0,
-                "assigned_meals": len(assigned),
-                "total_slots": len(days) * 4,
-            },
-        )
+        return {
+            "path": relative_path,
+            "lines": lines,
+            "total": round(sum(line["total"] for line in lines), 2),
+            "meal_costs": meal_costs,
+            "weekly_cost": round(weekly_cost, 2),
+            "daily_average": round(weekly_cost / len(days), 2) if days else 0.0,
+            "assigned_meals": len(assigned),
+            "total_slots": len(days) * 4,
+        }
 
     def _handle_simulate_debt(self, query: dict) -> None:
         """The credit simulator, priced by the same engine as a real debt.
@@ -2338,6 +2442,80 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             value = (value * 0x01000193) & 0xFFFFFFFF
         return f"{value:08x}"
 
+    def _nutrition_available_meals(self, plan: dict, slot: str) -> list:
+        """Las comidas de un momento que la semana puede usar.
+
+        mealUsesExcluded de la web: una comida desaparece en cuanto usa un
+        ingrediente excluido. La regla vive aquí para que el dado del teléfono
+        y el de la web no puedan discrepar.
+        """
+        excluded = {str(item) for item in plan.get("excluded_ingredients") or []}
+        return [
+            meal for meal in (plan.get("meals") or {}).get(slot) or []
+            if isinstance(meal, dict)
+            and not any(
+                str(item.get("ingredient", "")) in excluded
+                for item in meal.get("items") or []
+                if isinstance(item, dict)
+            )
+        ]
+
+    def _handle_randomize_nutrition(self) -> None:
+        """El dado: una comida al azar por momento, sin las excluidas.
+
+        Con day_index tira un solo día; sin él, la semana entera. El teléfono
+        manda la intención y no el plan, que no tiene.
+        """
+        payload = self._read_json_body()
+        relative_path = payload.get("path") or f"{DATA_URL_PREFIX}/nutrition/plan.json"
+        raw_index = payload.get("day_index")
+        target_path = self._resolve_data_path(relative_path)
+        plan = json.loads(target_path.read_text(encoding="utf-8"))
+        week = plan.get("week")
+        if not isinstance(week, list) or not week:
+            raise ValueError("El plan no tiene semana que randomizar")
+
+        if raw_index is None:
+            targets = range(len(week))
+        else:
+            index = int(raw_index)
+            if index < 0 or index >= len(week):
+                raise IndexError("Day index out of range")
+            targets = range(index, index + 1)
+
+        for index in targets:
+            day = week[index]
+            if not isinstance(day, dict):
+                continue
+            for slot in self.MEAL_SLOTS:
+                options = self._nutrition_available_meals(plan, slot)
+                day[slot] = random.choice(options).get("id") if options else None
+
+        self._write_document(target_path, plan)
+        self._export_mobile_snapshot()
+        self._send_json(HTTPStatus.OK, {"ok": True, "path": relative_path})
+
+    def _handle_set_nutrition_exclusions(self) -> None:
+        """Qué alimentos quedan fuera de la semana. Solo toca esa lista."""
+        payload = self._read_json_body()
+        relative_path = payload.get("path") or f"{DATA_URL_PREFIX}/nutrition/plan.json"
+        raw = payload.get("excluded")
+        if not isinstance(raw, list):
+            raise ValueError("Invalid excluded list")
+
+        target_path = self._resolve_data_path(relative_path)
+        plan = json.loads(target_path.read_text(encoding="utf-8"))
+        known = {str(item.get("id", "")) for item in plan.get("ingredients") or [] if isinstance(item, dict)}
+        plan["excluded_ingredients"] = [
+            value for value in dict.fromkeys(str(item).strip() for item in raw)
+            if value and value in known
+        ]
+
+        self._write_document(target_path, plan)
+        self._export_mobile_snapshot()
+        self._send_json(HTTPStatus.OK, {"ok": True, "path": relative_path,
+                                        "excluded": plan["excluded_ingredients"]})
+
     def _handle_save_nutrition(self) -> None:
         payload = self._read_json_body()
         relative_path = payload.get("path", f"{DATA_URL_PREFIX}/nutrition/plan.json")
@@ -3157,11 +3335,19 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                     {"ok": True, "debts": self._mobile_debts_detail(DATA_URL_PREFIX)},
                     stamp,
                 )
+                # El plan alimentario, con la misma forma: su archivo, su sello,
+                # y solo se reescribe si de verdad cambió.
+                nutrition_stamp = self._write_if_changed(
+                    target_dir / "nutrition.json",
+                    {"ok": True, **self._mobile_nutrition(DATA_URL_PREFIX)},
+                    stamp,
+                )
                 manifest = {
                     "years": live["years"],
                     "categories": self._shared_category_names(),
                     "debts": self._mobile_debt_catalog(DATA_URL_PREFIX),
                     "year_stamps": year_stamps,
+                    "nutrition_stamp": nutrition_stamp,
                 }
                 self._write_if_changed(target_dir / "manifest.json", manifest, stamp)
                 # Los formatos anteriores ya no se escriben; si queda alguno
@@ -3380,8 +3566,29 @@ def apply_outbox_command(command_path: Path, host: str) -> None:
         return
 
     action = command.get("action")
-    if action not in {"set_paid", "update_entry", "create_entry", "delete_entry", "update_income"}:
+    if action not in {"set_paid", "update_entry", "create_entry", "delete_entry",
+                      "update_income", "randomize_nutrition", "set_nutrition_exclusions"}:
         reject_outbox_command(command_path, f"acción desconocida: {action!r}")
+        return
+
+    # El plan alimentario tampoco pasa por el camino de los movimientos: son
+    # intenciones sobre el plan entero, y el servidor las resuelve contra el
+    # archivo — el teléfono manda qué quiere, no el documento.
+    if action == "randomize_nutrition":
+        body = {"path": str(command.get("path", ""))}
+        if command.get("day_index") is not None:
+            body["day_index"] = int(command["day_index"])
+        post_outbox_command(command_path, host, "/api/nutrition/randomize", body)
+        return
+    if action == "set_nutrition_exclusions":
+        excluded = command.get("excluded")
+        if not isinstance(excluded, list):
+            reject_outbox_command(command_path, "exclusiones inválidas")
+            return
+        post_outbox_command(command_path, host, "/api/nutrition/exclusions", {
+            "path": str(command.get("path", "")),
+            "excluded": excluded,
+        })
         return
 
     # Los ingresos salen antes: no viven en "entries" sino en la lista de un mes
