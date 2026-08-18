@@ -42,6 +42,18 @@ final class DashboardStore: ObservableObject {
         self.response = DemoMath.applyingReceived(received, to: income, in: response)
     }
 
+    /// Crear o editar un ingreso en el demo.
+    func applyDemoIncomeSave(_ fields: [String: Outbox.PendingValue], income: Income?, monthIndex: Int) {
+        guard let response else { return }
+        self.response = DemoMath.savingIncome(fields, to: income, monthIndex: monthIndex, in: response)
+    }
+
+    /// Borrar un ingreso en el demo.
+    func applyDemoIncomeDelete(_ income: Income) {
+        guard let response else { return }
+        self.response = DemoMath.deletingIncome(income, in: response)
+    }
+
     /// Crear (o duplicar, si viene el original) en el demo, al instante.
     func applyDemoCreate(_ fields: [String: Outbox.PendingValue], monthIndex: Int, after original: Entry?) {
         guard let response else { return }
@@ -78,6 +90,8 @@ private struct MonthDetailScreen: View {
                 demo: editable ? nil : DemoActions(
                     update: { store.applyDemoEdit($0, to: $1) },
                     updateIncome: { store.applyDemoIncomeReceived($0, income: $1) },
+                    saveIncome: { store.applyDemoIncomeSave($0, income: $1, monthIndex: monthIndex) },
+                    deleteIncome: { store.applyDemoIncomeDelete($0) },
                     create: { store.applyDemoCreate($0, monthIndex: monthIndex, after: $1) },
                     delete: { store.applyDemoDelete($0) }
                 )

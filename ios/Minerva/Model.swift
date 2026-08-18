@@ -78,9 +78,9 @@ struct CategoryTotal: Decodable, Identifiable {
 struct MonthSummary: Decodable, Identifiable {
     let index: Int
     let folder: String
-    let incomeCop: Double
-    let incomeUsd: Double
-    let usdCop: Double
+    var incomeCop: Double
+    var incomeUsd: Double
+    var usdCop: Double
     var totalOutcomes: Double
     var paidOutcomes: Double
     var free: Double
@@ -470,23 +470,121 @@ enum DemoMath {
     /// Aplica los cambios (las mismas claves que viajan al buzón del live:
     /// description, category, target_type, amount_cop, paid) y devuelve la
     /// respuesta con el mes tocado y el anual ya re-agregados.
-    /// El recibido de un ingreso en el demo. No mueve ningún total — es una
-    /// marca, no plata que entre o salga — así que basta con voltearla donde
-    /// está, sin re-agregar el mes ni el anual.
+    /// El recibido de un ingreso en el demo. Sí mueve totales: al mes solo le
+    /// suman los ingresos recibidos, igual que en _recompute_income_month.
     static func applyingReceived(
         _ received: Bool,
         to income: Income,
         in response: DashboardResponse
     ) -> DashboardResponse {
+        editingIncomes(of: income, in: response) { incomes, position in
+            incomes[position].received = received
+        }
+    }
+
+    /// Crear o editar un ingreso en el demo. Con `income` nil es uno nuevo, al
+    /// final del mes que se está mirando.
+    static func savingIncome(
+        _ fields: [String: Outbox.PendingValue],
+        to income: Income?,
+        monthIndex: Int,
+        in response: DashboardResponse
+    ) -> DashboardResponse {
+        if let income {
+            return editingIncomes(of: income, in: response) { incomes, position in
+                incomes[position] = applied(fields, to: incomes[position])
+            }
+        }
+        guard let slot = response.months.firstIndex(where: { $0.index == monthIndex }) else {
+            return response
+        }
         var updated = response
-        for monthIndex in updated.months.indices {
-            guard let position = updated.months[monthIndex].incomes.firstIndex(where: {
+        let blank = Income(
+            description: "", amountUsd: 0, usdCop: 0, amountCop: 0, received: false,
+            sourcePath: updated.months[slot].incomes.first?.sourcePath,
+            // Va al final: es donde lo pone el servidor, y el índice real llega
+            // con el próximo snapshot de todos modos.
+            sourceIndex: updated.months[slot].incomes.count,
+            monthIndex: monthIndex
+        )
+        updated.months[slot].incomes.append(applied(fields, to: blank))
+        recompute(&updated, at: slot)
+        return updated
+    }
+
+    static func deletingIncome(_ income: Income, in response: DashboardResponse) -> DashboardResponse {
+        editingIncomes(of: income, in: response) { incomes, position in
+            incomes.remove(at: position)
+        }
+    }
+
+    /// Encuentra el mes del ingreso, deja que lo toquen y re-agrega.
+    private static func editingIncomes(
+        of income: Income,
+        in response: DashboardResponse,
+        _ change: (inout [Income], Int) -> Void
+    ) -> DashboardResponse {
+        var updated = response
+        for slot in updated.months.indices {
+            guard let position = updated.months[slot].incomes.firstIndex(where: {
                 $0.sourcePath == income.sourcePath && $0.sourceIndex == income.sourceIndex
             }) else { continue }
-            updated.months[monthIndex].incomes[position].received = received
+            change(&updated.months[slot].incomes, position)
+            recompute(&updated, at: slot)
             return updated
         }
         return response
+    }
+
+    /// Los campos del editor sobre un ingreso. Cuando falta uno de los tres
+    /// montos se deriva de los otros dos, como _normalize_new_income_entry.
+    private static func applied(
+        _ fields: [String: Outbox.PendingValue],
+        to income: Income
+    ) -> Income {
+        func number(_ key: String) -> Double? {
+            if case .number(let value)? = fields[key] { return value }
+            return nil
+        }
+        var text = income.description
+        if case .text(let value)? = fields["description"] { text = value }
+        var received = income.received ?? false
+        if case .flag(let value)? = fields["received"] { received = value }
+
+        let usd = number("amount_usd") ?? income.amountUsd ?? 0
+        let rate = number("usd_cop") ?? income.usdCop ?? 0
+        let cop: Double
+        if let given = number("amount_cop") {
+            cop = given
+        } else if fields["amount_usd"] != nil || fields["usd_cop"] != nil {
+            cop = round3(usd * rate)
+        } else {
+            cop = income.amountCop ?? 0
+        }
+
+        return Income(
+            id: income.id, description: text, amountUsd: usd, usdCop: rate,
+            amountCop: cop, received: received,
+            sourcePath: income.sourcePath, sourceIndex: income.sourceIndex,
+            monthIndex: income.monthIndex
+        )
+    }
+
+    /// _recompute_income_month y detrás el resumen del mes y el anual: al mes
+    /// solo le suman los ingresos recibidos, y su tasa sale de esos dos totales.
+    private static func recompute(_ response: inout DashboardResponse, at slot: Int) {
+        let received = response.months[slot].incomes.filter { $0.received ?? false }
+        let usd = round3(received.reduce(0) { $0 + ($1.amountUsd ?? 0) })
+        let cop = round3(received.reduce(0) { $0 + ($1.amountCop ?? 0) })
+        response.months[slot].incomeUsd = usd
+        response.months[slot].incomeCop = cop
+        response.months[slot].usdCop = usd > 0 ? ((cop / usd) * 100).rounded() / 100 : 0
+        summarize(&response.months[slot])
+        response.annual = annual(from: response.months, keeping: response.annual)
+    }
+
+    private static func round3(_ value: Double) -> Double {
+        (value * 1000).rounded() / 1000
     }
 
     static func applying(

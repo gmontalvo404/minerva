@@ -6,6 +6,10 @@ struct DemoActions {
     let update: ([String: Outbox.PendingValue], Entry) -> Void
     /// El recibido de un ingreso: el demo no tiene Mac que confirme.
     let updateIncome: (Bool, Income) -> Void
+    /// Crear (income nil) o editar un ingreso, y borrarlo. El demo re-agrega
+    /// el mes y el anual al instante, como con los movimientos.
+    let saveIncome: ([String: Outbox.PendingValue], Income?) -> Void
+    let deleteIncome: (Income) -> Void
 
     /// (campos, original): con original presente es un duplicado.
     let create: ([String: Outbox.PendingValue], Entry?) -> Void
@@ -80,12 +84,18 @@ struct MonthDetailView: View {
         }
         .sheet(item: $editingIncome) { income in
             EditIncomeView(income: income) { fields, syncFrom in
-                Outbox.shared.queueUpdateIncome(fields, income: income, syncFrom: syncFrom)
+                if let demo {
+                    demo.saveIncome(fields, income)
+                } else {
+                    Outbox.shared.queueUpdateIncome(fields, income: income, syncFrom: syncFrom)
+                }
             }
         }
         .sheet(isPresented: $creatingIncome) {
             EditIncomeView(income: nil) { fields, _ in
-                if let path = month.incomes.first?.sourcePath {
+                if let demo {
+                    demo.saveIncome(fields, nil)
+                } else if let path = month.incomes.first?.sourcePath {
                     Outbox.shared.queueCreateIncome(fields, path: path, monthIndex: month.index)
                 }
             }
@@ -586,7 +596,7 @@ struct MonthDetailView: View {
             HStack {
                 Eyebrow("Ingresos", theme)
                 Spacer()
-                if editable {
+                if canEdit {
                     Button {
                         creatingIncome = true
                     } label: {
@@ -623,15 +633,13 @@ struct MonthDetailView: View {
                 // El interruptor se queda con su toque; el resto de la fila
                 // abre el editor, como en los movimientos.
                 .contentShape(Rectangle())
-                .onTapGesture { if editable { editingIncome = income } }
+                .onTapGesture { if canEdit { editingIncome = income } }
                 .contextMenu {
-                    // Solo en la sesión real: el demo no recalcula los totales
-                    // del mes cuando cambia un ingreso, y enseñarlo torcido es
-                    // peor que no ofrecerlo.
-                    if editable {
+                    if canEdit {
                         Button("Editar") { editingIncome = income }
                         Button("Borrar", role: .destructive) {
-                            Outbox.shared.queueDeleteIncome(income)
+                            if let demo { demo.deleteIncome(income) }
+                            else { Outbox.shared.queueDeleteIncome(income) }
                         }
                     }
                 }
