@@ -1,3 +1,6 @@
 # Generados por `xcodegen generate` a partir de project.yml.
 Minerva.xcodeproj/
 Minerva/Info.plist
+
+# El equipo de firma de esta máquina: local, nunca versionado.
+signing.env

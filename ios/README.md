@@ -45,6 +45,18 @@ xcodegen generate
 open Minerva.xcodeproj
 ```
 
+**El equipo de firma no vive en el repo**: `project.yml` lo lee de
+`MINERVA_TEAM_ID`, así cada quien compila con el suyo. Puedes exportarla en tu
+perfil del shell, o dejarla en `ios/signing.env` (ignorado por git) y cargarla
+antes de generar:
+
+```bash
+cd ios && source signing.env && xcodegen generate
+```
+
+Sin la variable el proyecto se genera igual, solo que sin equipo elegido —
+Xcode lo pide en el paso 1.
+
 En Xcode:
 
 1. Target **Minerva** → *Signing & Capabilities* → marca tu equipo personal
