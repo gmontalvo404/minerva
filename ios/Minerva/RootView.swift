@@ -18,6 +18,15 @@ final class DashboardStore: ObservableObject {
     /// A qué archivo apunta finalizar una deuda; vacío en el demo.
     @Published var debtsPath = ""
 
+    /// La ruta del plan alimentario. El snapshot la trae desde que el servidor
+    /// la exporta; un snapshot anterior no, y entonces vale la del dataset
+    /// real — que es el único que el teléfono puede tocar de todos modos.
+    /// Sin esto, un snapshot viejo hacía que el dado no hiciera nada.
+    var nutritionPlanPath: String {
+        let carried = nutrition?.planPath ?? ""
+        return carried.isEmpty ? "finance/data/nutrition/plan.json" : carried
+    }
+
     /// Las deudas como las necesita el editor: con su saldo. Si el detalle aún
     /// no llegó se cae al manifiesto, que trae id y nombre pero no números —
     /// entonces el servidor sigue siendo quien atrapa un abono de más.

@@ -13,6 +13,12 @@ struct MealWeekScreen: View {
     let live: Bool
     @State private var rolled: String?
     @State private var failed = false
+    /// Tiradas en vuelo. Un dado tarda lo que tarde el Mac en aplicarlo y
+    /// iCloud en traer la semana nueva; volver a tirar mientras tanto encola
+    /// una segunda tirada sobre lo mismo, y la primera se pierde sin que se
+    /// vea. Se apagan hasta que llegue el snapshot.
+    @State private var rollingWeek = false
+    @State private var rollingDays: Set<Int> = []
     @Environment(\.colorScheme) private var scheme
 
     private var theme: Theme { .of(scheme) }
@@ -24,7 +30,8 @@ struct MealWeekScreen: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
                         Button {
-                            roll(path: plan.planPath, dayIndex: nil, note: "Randomizando la semana…")
+                            rollingWeek = true
+                            roll(path: store.nutritionPlanPath, dayIndex: nil, note: "Randomizando la semana…")
                         } label: {
                             Label("Randomizar semana", systemImage: "die.face.5")
                                 .font(.forum(16))
@@ -32,9 +39,9 @@ struct MealWeekScreen: View {
                                 .frame(minHeight: 44)
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(live ? theme.heading : theme.muted)
+                        .foregroundStyle(live && !rollingWeek ? theme.heading : theme.muted)
                         .background(inputWell)
-                        .disabled(!live)
+                        .disabled(!live || rollingWeek)
 
                         NavigationLink(value: RootView.Route.mealPlan(.exclusions)) {
                             Label("Excluir", systemImage: "xmark.circle")
@@ -75,15 +82,18 @@ struct MealWeekScreen: View {
                                 .font(.forum(15))
                                 .foregroundStyle(theme.muted)
                             if live {
+                                let waiting = rollingWeek || rollingDays.contains(index)
                                 Button {
-                                    roll(path: plan.planPath, dayIndex: index, note: "Randomizando \(day.day)…")
+                                    rollingDays.insert(index)
+                                    roll(path: store.nutritionPlanPath, dayIndex: index, note: "Randomizando \(day.day)…")
                                 } label: {
                                     Image(systemName: "die.face.5")
                                         .font(.system(size: 15))
-                                        .foregroundStyle(theme.accent)
+                                        .foregroundStyle(waiting ? theme.muted : theme.accent)
                                         .frame(width: 32, height: 32)
                                 }
                                 .buttonStyle(.plain)
+                                .disabled(waiting)
                                 .accessibilityLabel("Randomizar \(day.day)")
                             }
                         }
@@ -96,6 +106,13 @@ struct MealWeekScreen: View {
             } else {
                 PlanEmpty(theme: theme)
             }
+        }
+        // La semana nueva llegó: se acabó la espera.
+        .onChange(of: store.nutrition?.generatedAt) { _ in
+            rollingWeek = false
+            rollingDays.removeAll()
+            rolled = nil
+            failed = false
         }
     }
 
@@ -115,6 +132,11 @@ struct MealWeekScreen: View {
         let result = Outbox.shared.queueRandomizeNutrition(path: path, dayIndex: dayIndex)
         rolled = result.problem ?? note
         failed = result.problem != nil
+        if failed {
+            // No salió: nada que esperar, y el dado vuelve a estar disponible.
+            rollingWeek = false
+            rollingDays.removeAll()
+        }
     }
 }
 
@@ -159,7 +181,7 @@ struct ExclusionsScreen: View {
                         Eyebrow(group.label, theme)
                         ForEach(group.items) { ingredient in
                             Button {
-                                toggle(ingredient.id, path: plan.planPath)
+                                toggle(ingredient.id, path: store.nutritionPlanPath)
                             } label: {
                                 HStack(spacing: 10) {
                                     Image(systemName: excluded.contains(ingredient.id)
