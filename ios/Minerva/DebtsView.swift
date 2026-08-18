@@ -104,7 +104,7 @@ struct DebtsHome: View {
 
             ProgressTrack(value: debt.progress / 100, theme: theme)
 
-            Text("\(debt.paidInstallments) pagadas · \(debt.remainingInstallments) pendientes · \(Format.percent1(debt.annualInterestRate)) anual")
+            Text("\(debt.paidInstallments) pagadas · \(debt.remainingInstallments) pendientes · \(Format.rate(debt.annualInterestRate)) anual")
                 .font(.forum(13))
                 .foregroundStyle(theme.muted)
 
@@ -254,7 +254,7 @@ struct DebtScheduleView: View {
             )
             KpiCard(
                 title: "Interés anual",
-                value: Format.percent1(debt.annualInterestRate),
+                value: Format.rate(debt.annualInterestRate),
                 detail: "Efectivo anual"
             )
             KpiCard(

@@ -33,6 +33,19 @@ enum Format {
         return formatter
     }()
 
+    /// La tasa anual, tal como se pactó: 21,99 no es 22,0. Sin decimales de
+    /// relleno, así un 24 % redondo se queda en "24%"; y con un tope alto pero
+    /// finito, que es lo que evita que asome el ruido binario del Double
+    /// (21,99 se guarda como 21,98999…).
+    private static let rateFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.locale = locale
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 6
+        return formatter
+    }()
+
     static func cop(_ value: Double) -> String {
         "COP " + (copFormatter.string(from: NSNumber(value: value)) ?? "0")
     }
@@ -54,6 +67,10 @@ enum Format {
     /// El porcentaje de la tabla de presupuesto: un decimal, coma española.
     static func percent1(_ value: Double) -> String {
         (percent1Formatter.string(from: NSNumber(value: value)) ?? "0") + "%"
+    }
+
+    static func rate(_ value: Double) -> String {
+        (rateFormatter.string(from: NSNumber(value: value)) ?? "0") + "%"
     }
 
     static func fx(_ value: Double) -> String {

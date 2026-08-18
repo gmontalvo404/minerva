@@ -311,8 +311,12 @@ struct RootView: View {
                         snapshotFooter
                     }
                     .padding(.horizontal)
-                    .padding(.vertical, 10)
-                    .frame(minHeight: geo.size.height, alignment: .top)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+                    // geo.size.height es la zona útil, sin el indicador de
+                    // inicio. Se le devuelve casi todo: la tarjeta y el
+                    // "Calculado hace…" bajan hasta rozarlo, sin taparlo.
+                    .frame(minHeight: geo.size.height + max(geo.safeAreaInsets.bottom - 10, 0), alignment: .top)
                 }
                 .refreshable { await load() }
             }
