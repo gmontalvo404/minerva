@@ -205,7 +205,7 @@ struct DebtScheduleScreen: View {
 
     var body: some View {
         if let debt = store.debtDetails?.first(where: { $0.id == debtId }) {
-            DebtScheduleView(debt: debt, theme: .of(scheme))
+            DebtScheduleView(debt: debt, theme: .of(scheme), debtsPath: store.debtsPath)
         }
     }
 }
@@ -215,6 +215,12 @@ struct DebtScheduleScreen: View {
 struct DebtScheduleView: View {
     let debt: DebtDetail
     let theme: Theme
+    /// A qué archivo apunta finalizar; vacío en el demo, que no puede.
+    var debtsPath = ""
+    @State private var settling = false
+    @State private var settled = false
+
+    private var canSettle: Bool { !debtsPath.isEmpty && debt.remainingBalance > 0 && !settled }
 
     var body: some View {
         ZStack {
@@ -222,6 +228,7 @@ struct DebtScheduleView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     kpis
+                    if canSettle || settled { settleCard }
                     totalsCard
                     scheduleCard
                 }
@@ -262,6 +269,56 @@ struct DebtScheduleView: View {
                 value: Format.percent1(debt.progress),
                 detail: "\(debt.paidInstallments) cuotas pagadas"
             )
+        }
+    }
+
+    /// Cerrar la deuda: escribe el abono que falta en el mes corriente, no una
+    /// bandera. Confirma antes porque crea un movimiento de verdad.
+    private var settleCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if settled {
+                Text("Pago final en camino. El Mac lo aplica y la deuda queda saldada.")
+                    .font(.forum(15))
+                    .foregroundStyle(theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Se creará un movimiento de \(Format.cop(debt.remainingBalance)) en el mes actual y la deuda quedará saldada.")
+                    .font(.forum(14))
+                    .foregroundStyle(theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    settling = true
+                } label: {
+                    Text("Finalizar deuda")
+                        .font(.forum(17))
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 46)
+                        .foregroundStyle(.white)
+                        .background(
+                            LinearGradient(
+                                colors: [theme.buttonStart, theme.buttonEnd],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            ),
+                            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card(theme)
+        .confirmationDialog(
+            "Finalizar «\(debt.displayName)»",
+            isPresented: $settling,
+            titleVisibility: .visible
+        ) {
+            Button("Crear el pago final") {
+                Outbox.shared.queueSettleDebt(path: debtsPath, debtId: debt.id)
+                settled = true
+            }
+            Button("Cancelar", role: .cancel) {}
+        } message: {
+            Text("Queda un movimiento de \(Format.cop(debt.remainingBalance)) en el mes actual.")
         }
     }
 

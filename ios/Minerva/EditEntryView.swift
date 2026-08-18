@@ -227,6 +227,25 @@ struct EditEntryView: View {
                                     .font(.forum(13))
                                     .foregroundStyle(theme.muted)
                             }
+                            // Poner el saldo restante en el importe: así este
+                            // movimiento es el que finaliza la deuda, sin crear
+                            // uno aparte.
+                            if !linkedDebts.isEmpty, linkedHeadroom.isFinite, linkedHeadroom > 0 {
+                                Button {
+                                    amountText = Self.plainAmount(linkedHeadroom)
+                                } label: {
+                                    Text("Finalizar deuda — \(Format.cop(linkedHeadroom))")
+                                        .font(.forum(15))
+                                        .foregroundStyle(theme.accent)
+                                        .frame(maxWidth: .infinity)
+                                        .frame(minHeight: 40)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                                .strokeBorder(theme.line, lineWidth: 1)
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                            }
                             if let abonoWarning {
                                 Text(abonoWarning)
                                     .font(.forum(13))

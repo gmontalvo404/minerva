@@ -211,6 +211,7 @@ export function AddEntryDialog({
             language={language}
             amount={Number(amount) || 0}
             onOverpay={setOverpaying}
+            onUseRemaining={(value) => setAmount(String(Math.round(value)))}
           />
         ) : null}
       </div>

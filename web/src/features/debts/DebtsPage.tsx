@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getDebtsDetail, getUsdCopRate, reorderDebt } from "../../lib/api";
+import { getDebtsDetail, getUsdCopRate, reorderDebt, settleDebt } from "../../lib/api";
 import type { DebtDetail } from "../../lib/api";
 import { debtsPath } from "../../lib/dataset";
 import type { Dataset } from "../../lib/dataset";
@@ -81,6 +81,27 @@ export function DebtsPage({ dataset, language, onSidebar }: DebtsPageProps) {
   const [linkDebt, setLinkDebt] = useState<DebtDetail | null>(null);
   const [creating, setCreating] = useState(false);
   /** The row whose gear menu is open, and the button anchoring it. */
+  /**
+   * Finaliza la deuda: el servidor escribe el abono que falta en el mes
+   * corriente y la deuda queda saldada como consecuencia. El monto se pregunta
+   * solo para confirmarlo — quien lo calcula es el servidor.
+   */
+  const settle = async (debtId: string) => {
+    const debt = raw.find((item) => item.id === debtId);
+    if (!debt) return;
+    setMenu(null);
+    if (!window.confirm(t("debt_settle_confirm", { amount: formatCopNoCode(debt.remaining_balance, language) }))) {
+      return;
+    }
+    try {
+      await settleDebt(debtsPath(dataset), debtId);
+      await load();
+      setStatus(t("debt_settle_done"));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   const [menu, setMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
   /** The rate the detail uses for its USD column, like getDebtDetailUsdCopRate. */
   const [usdCop, setUsdCop] = useState(0);
@@ -435,6 +456,11 @@ export function DebtsPage({ dataset, language, onSidebar }: DebtsPageProps) {
             setLinkDebt(raw.find((debt) => debt.id === menu.id) ?? null);
             setMenu(null);
           }}
+          onSettle={
+            (raw.find((debt) => debt.id === menu.id)?.remaining_balance ?? 0) > 0
+              ? () => void settle(menu.id)
+              : undefined
+          }
           t={t}
         />
       ) : null}

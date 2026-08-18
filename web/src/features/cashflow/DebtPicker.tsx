@@ -16,6 +16,9 @@ export interface DebtPickerProps {
   amount?: number;
   /** Told to the parent so it can hold the submit back. */
   onOverpay?: (overpaying: boolean) => void;
+  /** Fills the amount with what the picked debts still owe, so this movement
+   *  is the one that finishes them. */
+  onUseRemaining?: (amount: number) => void;
 }
 
 /**
@@ -33,6 +36,7 @@ export function DebtPicker({
   language,
   amount,
   onOverpay,
+  onUseRemaining,
 }: DebtPickerProps) {
   const open = debts.filter((debt) => debt.remaining_installments > 0);
 
@@ -74,6 +78,16 @@ export function DebtPicker({
           ))
         )}
       </div>
+
+      {onUseRemaining && selected.length > 0 && headroom > 0 ? (
+        <button
+          type="button"
+          className="entry-history-button create-entry-debt-settle"
+          onClick={() => onUseRemaining(headroom)}
+        >
+          {`Finalizar deuda — ${formatCopNoCode(headroom, language)}`}
+        </button>
+      ) : null}
 
       {overpaying ? (
         <p className="field__hint create-entry-debt-list__empty">

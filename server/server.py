@@ -366,6 +366,9 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             if self.path == "/api/debts/reorder":
                 self._handle_reorder_debt()
                 return
+            if self.path == "/api/debts/settle":
+                self._handle_settle_debt()
+                return
             if self.path == "/api/debts/sync_cash_flow":
                 self._handle_sync_debt_cash_flow()
                 return
@@ -877,6 +880,73 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             return self._sync_auto_cash_flow_entries(debts)
         except Exception as error:  # noqa: BLE001
             return {"error": str(error)}
+
+    def _handle_settle_debt(self) -> None:
+        """Cerrar una deuda escribiendo el abono que falta.
+
+        No es una bandera: se crea el movimiento de verdad, por el saldo, en el
+        mes corriente — igual que si lo hubieras pagado a mano. Así el cash flow
+        y las deudas siguen contando lo mismo, que es la razón de que la deuda
+        se derive del cash flow en primer lugar.
+        """
+        payload = self._read_json_body()
+        relative_path = payload.get("path") or f"{DATA_URL_PREFIX}/debts/debts.json"
+        debt_id = str(payload.get("debt_id", "")).strip()
+        if not debt_id:
+            raise ValueError("Missing debt_id")
+
+        _, debts, _ = self._load_debts(relative_path)
+        debt = next(
+            (item for item in debts if isinstance(item, dict) and str(item.get("id", "")) == debt_id),
+            None,
+        )
+        if debt is None:
+            raise ValueError(f"No existe la deuda {debt_id}.")
+
+        detail = self._build_debt_detail(
+            debt, self._debt_linked_payments_across_years(debt, debts)
+        )
+        raw_name = detail.get("name")
+        name = raw_name.get("es") if isinstance(raw_name, dict) else (raw_name or debt_id)
+        remaining = round(self._to_finite_float(detail.get("remaining_balance", 0)), 2)
+        if remaining <= 0:
+            raise ValueError(f"La deuda «{name}» ya está cancelada.")
+
+        _, root = resolve_dataset_path(relative_path)
+        cash_flow_root = f"{dataset_url_prefix(root)}/cash_flow"
+        today = datetime.now()
+        years = self._discover_years(cash_flow_root)
+        # El año corriente si el dataset lo tiene; si no —el demo, cuyo "año" se
+        # llama demo— el que haya, antes que inventar una carpeta.
+        year = str(today.year) if str(today.year) in years else (years[-1] if years else str(today.year))
+        month_path = f"{cash_flow_root}/{year}/outcomes/{MONTH_FOLDERS[today.month - 1]}.json"
+
+        entry = {
+            "paid": True,
+            "description": f"Pago final de {name}",
+            "category": "Debt",
+            "amount_cop": remaining,
+            "linked_debts": [debt_id],
+            "extra_payment": True,
+        }
+        document, entries, target_path = self._load_entries(month_path, create_if_missing=True)
+        new_entry = self._normalize_new_entry(entry)
+        new_entry["id"] = self._next_entry_id(month_path)
+        if self._is_unified_outcomes_path(target_path):
+            new_entry["type"] = "debts"
+        self._ensure_entry_audit_fields(new_entry)
+        new_entry["history"] = []
+        entries.append(new_entry)
+        document["entries"] = entries
+        self._write_document(target_path, document)
+        self._export_mobile_snapshot()
+
+        self._send_json(HTTPStatus.OK, {
+            "ok": True,
+            "path": month_path,
+            "amount_cop": remaining,
+            "description": new_entry["description"],
+        })
 
     def _handle_get_debts_detail(self, query: dict) -> None:
         """Debts with their schedule and totals already computed.
@@ -3332,7 +3402,13 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                 # autoestampado, junto a los años.
                 self._write_if_changed(
                     target_dir / "debts.json",
-                    {"ok": True, "debts": self._mobile_debts_detail(DATA_URL_PREFIX)},
+                    {
+                        "ok": True,
+                        # A qué archivo apunta "finalizar deuda", como plan_path
+                        # en nutrición: el teléfono lo devuelve tal cual.
+                        "path": f"{DATA_URL_PREFIX}/debts/debts.json",
+                        "debts": self._mobile_debts_detail(DATA_URL_PREFIX),
+                    },
                     stamp,
                 )
                 # El plan alimentario, con la misma forma: su archivo, su sello,
@@ -3567,13 +3643,24 @@ def apply_outbox_command(command_path: Path, host: str) -> None:
 
     action = command.get("action")
     if action not in {"set_paid", "update_entry", "create_entry", "delete_entry",
-                      "update_income", "randomize_nutrition", "set_nutrition_exclusions"}:
+                      "update_income", "randomize_nutrition", "set_nutrition_exclusions",
+                      "settle_debt"}:
         reject_outbox_command(command_path, f"acción desconocida: {action!r}")
         return
 
     # El plan alimentario tampoco pasa por el camino de los movimientos: son
     # intenciones sobre el plan entero, y el servidor las resuelve contra el
     # archivo — el teléfono manda qué quiere, no el documento.
+    if action == "settle_debt":
+        debt_id = str(command.get("debt_id", "")).strip()
+        if not debt_id:
+            reject_outbox_command(command_path, "falta la deuda")
+            return
+        post_outbox_command(command_path, host, "/api/debts/settle", {
+            "path": str(command.get("path", "")),
+            "debt_id": debt_id,
+        })
+        return
     if action == "randomize_nutrition":
         body = {"path": str(command.get("path", ""))}
         if command.get("day_index") is not None:

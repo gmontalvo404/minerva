@@ -2866,6 +2866,13 @@ tbody tr[data-debt-row="true"].is-drop-after td {
   background: rgba(255, 255, 255, 0.04);
 }
 
+/* El atajo que pone el saldo restante en el importe, dentro del selector de
+   deudas: mismo botón discreto del histórico, a lo ancho de su bloque. */
+.create-entry-debt-settle {
+  width: 100%;
+  margin-top: 8px;
+}
+
 .entry-history-button {
   background: rgba(255, 255, 255, 0.92);
   color: var(--heading);

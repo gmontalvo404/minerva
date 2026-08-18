@@ -472,6 +472,14 @@ export const EMPTY_NUTRITION_COSTS: NutritionCosts = {
   totalSlots: 0,
 };
 
+/**
+ * Cierra una deuda escribiendo el abono que falta, en el mes corriente. El
+ * saldo lo calcula el servidor: mandarlo desde aquí sería copiar la cuenta.
+ */
+export async function settleDebt(path: string, debtId: string): Promise<void> {
+  await post("/api/debts/settle", { path, debt_id: debtId });
+}
+
 export async function getShoppingList(planPath: string): Promise<NutritionCosts> {
   const response = await fetch(`/api/nutrition/shopping?path=${encodeURIComponent(planPath)}`);
   if (!response.ok) {
