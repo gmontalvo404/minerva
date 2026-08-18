@@ -51,6 +51,13 @@ export function getCategoryLabel(category: string, language: Language): string {
   return translation[language] || translation.en || normalized;
 }
 
+/**
+ * Where a debts movement lands unless you say otherwise. It is the catalog's
+ * canonical name, not the label: both datasets store "Debt" and translate it
+ * on the way out.
+ */
+export const DEBT_CATEGORY = "Debt";
+
 export interface CategoryOption {
   value: string;
   label: string;

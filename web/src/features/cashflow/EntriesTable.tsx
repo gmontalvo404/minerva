@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createEntry, deleteEntry, reorderEntry, updateEntry } from "../../lib/api";
 import type { DebtDetail } from "../../lib/api";
-import { getCategoryLabel } from "../../lib/categories";
+import { DEBT_CATEGORY, getCategoryLabel } from "../../lib/categories";
 import type { CategoryOption } from "../../lib/categories";
 import { formatCop, formatUsd } from "../../lib/format";
 import type { Language } from "../../lib/i18n";
@@ -339,7 +339,16 @@ export function EntriesTable({
                         swatch: TYPE_META[option].color,
                       }))}
                       value={type}
-                      onChange={(next) => void save(entry, { target_type: next })}
+                      onChange={(next) =>
+                        void save(
+                          entry,
+                          // Pasar a deudas arrastra la categoría, igual que en
+                          // el diálogo de crear.
+                          next === "debts"
+                            ? { target_type: next, category: DEBT_CATEGORY }
+                            : { target_type: next },
+                        )
+                      }
                     />
                   </div>
                 </td>

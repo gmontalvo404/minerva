@@ -4,6 +4,7 @@ import type { DebtDetail } from "../../lib/api";
 import type { CategoryOption } from "../../lib/categories";
 import type { Language } from "../../lib/i18n";
 import { Dialog, Select } from "../../ui";
+import { DEBT_CATEGORY } from "../../lib/categories";
 import { DebtPicker } from "./DebtPicker";
 import { TYPE_META, tint } from "./EntriesTable";
 import { ENTRY_TYPES } from "./types";
@@ -54,7 +55,14 @@ export function AddEntryDialog({
   // section when the type changes.
   const chooseType = (next: EntryType) => {
     setType(next);
-    if (next !== "debts") setLinkedDebts([]);
+    if (next !== "debts") {
+      setLinkedDebts([]);
+      return;
+    }
+    // Un movimiento de deudas es de la categoría Debt salvo excepción, así que
+    // se elige sola. Queda a un clic de cambiarla: esto es un punto de partida,
+    // no una decisión tomada.
+    setCategory(DEBT_CATEGORY);
   };
 
   const toggleDebt = (id: string, checked: boolean) => {

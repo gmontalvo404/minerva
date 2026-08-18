@@ -31,6 +31,9 @@ struct EditEntryView: View {
     /// que ni se ofrece; cuando el saldo no se conoce se deja pasar y decide el
     /// servidor. La que ya estaba marcada se queda visible, para poder
     /// desmarcarla en un movimiento viejo.
+    /// El nombre con el que los dos datasets guardan la categoría de deudas.
+    private static let debtCategory = "Debt"
+
     private var payableDebts: [DebtOption] {
         debts.filter { ($0.remainingBalance ?? 1) > 0 || linkedDebts.contains($0.id) }
     }
@@ -110,7 +113,15 @@ struct EditEntryView: View {
                     },
                     selected: kind.rawValue,
                     theme: theme
-                ) { kind = EntryKind(rawValue: $0) ?? kind }
+                ) { picked in
+                    kind = EntryKind(rawValue: picked) ?? kind
+                    // Un movimiento de deudas es de la categoría Debt salvo
+                    // excepción: se elige sola y queda lista para cambiarla.
+                    // Es el nombre del catálogo, no la etiqueta traducida.
+                    if kind == .debts, categories.contains(Self.debtCategory) {
+                        category = Self.debtCategory
+                    }
+                }
             }
         }
     }
