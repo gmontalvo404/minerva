@@ -209,15 +209,21 @@ struct RootView: View {
     /// Las cuatro caras del plan alimentario, en el orden del selector.
     enum MealPlanScreen: String, CaseIterable, Identifiable, Hashable {
         case week, shopping, catalog, rules
+        /// Se abre desde el plan semanal, no desde el selector.
+        case exclusions
 
         var id: String { rawValue }
 
+        /// Las que ofrece el selector; excluir cuelga de la semana.
+        static var offered: [MealPlanScreen] { [.week, .shopping, .catalog, .rules] }
+
         var label: String {
             switch self {
-            case .week: return "Semana"
+            case .week: return "Plan semanal"
             case .shopping: return "Mercado"
             case .catalog: return "Comidas"
             case .rules: return "Reglas"
+            case .exclusions: return "Excluir alimentos"
             }
         }
     }
@@ -395,7 +401,7 @@ struct RootView: View {
                 // caras abrir, con el mismo gesto que Vista en deudas.
                 Eyebrow("Vista", theme)
                 LazyVGrid(columns: pairColumns, spacing: 8) {
-                    ForEach(MealPlanScreen.allCases) { screen in
+                    ForEach(MealPlanScreen.offered) { screen in
                         NavigationLink(value: Route.mealPlan(screen)) {
                             SelectorBox(label: screen.label, active: false, theme: theme)
                         }
@@ -497,10 +503,11 @@ struct RootView: View {
             DebtScheduleScreen(store: store, debtId: id)
         case .mealPlan(let screen):
             switch screen {
-            case .week: MealWeekScreen(store: store)
+            case .week: MealWeekScreen(store: store, live: dataset == .live)
             case .shopping: ShoppingListScreen(store: store)
             case .catalog: MealCatalogScreen(store: store)
             case .rules: GroundRulesScreen(store: store)
+            case .exclusions: ExclusionsScreen(store: store, live: dataset == .live)
             }
         }
     }

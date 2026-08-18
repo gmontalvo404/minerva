@@ -7,6 +7,7 @@ import os
 import re
 import socket
 import subprocess
+import random
 import sys
 import threading
 from copy import deepcopy
@@ -367,6 +368,12 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                 return
             if self.path == "/api/debts/sync_cash_flow":
                 self._handle_sync_debt_cash_flow()
+                return
+            if self.path == "/api/nutrition/randomize":
+                self._handle_randomize_nutrition()
+                return
+            if self.path == "/api/nutrition/exclusions":
+                self._handle_set_nutrition_exclusions()
                 return
             if self.path == "/api/nutrition/save":
                 self._handle_save_nutrition()
@@ -1360,6 +1367,9 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
 
         condiments = plan.get("condiments")
         return {
+            # A qué archivo apuntan el dado y las exclusiones. El teléfono lo
+            # devuelve tal cual: no tiene por qué saber cómo se llama el dataset.
+            "plan_path": relative_path,
             "week": week,
             "catalog": catalog,
             # Pares [título, texto]; el teléfono los pinta tal cual.
@@ -1373,6 +1383,18 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             "condiments_yes": str((condiments or {}).get("yes") or "") if isinstance(condiments, dict) else "",
             "condiments_no": str((condiments or {}).get("no") or "") if isinstance(condiments, dict) else "",
             "excluded_ingredients": plan.get("excluded_ingredients") or [],
+            # El catálogo, para poder excluir desde el teléfono. Con su etiqueta
+            # ya resuelta: el archivo la guarda como texto o como lista.
+            "ingredients": [
+                {
+                    "id": str(item.get("id", "")),
+                    "name": item.get("name", ""),
+                    "labels": self._ingredient_labels(item),
+                    "store": item.get("store", ""),
+                }
+                for item in plan.get("ingredients") or []
+                if isinstance(item, dict) and item.get("id")
+            ],
             "shopping": {key: value for key, value in shopping.items() if key != "path"},
         }
 
@@ -2419,6 +2441,80 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             value ^= byte
             value = (value * 0x01000193) & 0xFFFFFFFF
         return f"{value:08x}"
+
+    def _nutrition_available_meals(self, plan: dict, slot: str) -> list:
+        """Las comidas de un momento que la semana puede usar.
+
+        mealUsesExcluded de la web: una comida desaparece en cuanto usa un
+        ingrediente excluido. La regla vive aquí para que el dado del teléfono
+        y el de la web no puedan discrepar.
+        """
+        excluded = {str(item) for item in plan.get("excluded_ingredients") or []}
+        return [
+            meal for meal in (plan.get("meals") or {}).get(slot) or []
+            if isinstance(meal, dict)
+            and not any(
+                str(item.get("ingredient", "")) in excluded
+                for item in meal.get("items") or []
+                if isinstance(item, dict)
+            )
+        ]
+
+    def _handle_randomize_nutrition(self) -> None:
+        """El dado: una comida al azar por momento, sin las excluidas.
+
+        Con day_index tira un solo día; sin él, la semana entera. El teléfono
+        manda la intención y no el plan, que no tiene.
+        """
+        payload = self._read_json_body()
+        relative_path = payload.get("path") or f"{DATA_URL_PREFIX}/nutrition/plan.json"
+        raw_index = payload.get("day_index")
+        target_path = self._resolve_data_path(relative_path)
+        plan = json.loads(target_path.read_text(encoding="utf-8"))
+        week = plan.get("week")
+        if not isinstance(week, list) or not week:
+            raise ValueError("El plan no tiene semana que randomizar")
+
+        if raw_index is None:
+            targets = range(len(week))
+        else:
+            index = int(raw_index)
+            if index < 0 or index >= len(week):
+                raise IndexError("Day index out of range")
+            targets = range(index, index + 1)
+
+        for index in targets:
+            day = week[index]
+            if not isinstance(day, dict):
+                continue
+            for slot in self.MEAL_SLOTS:
+                options = self._nutrition_available_meals(plan, slot)
+                day[slot] = random.choice(options).get("id") if options else None
+
+        self._write_document(target_path, plan)
+        self._export_mobile_snapshot()
+        self._send_json(HTTPStatus.OK, {"ok": True, "path": relative_path})
+
+    def _handle_set_nutrition_exclusions(self) -> None:
+        """Qué alimentos quedan fuera de la semana. Solo toca esa lista."""
+        payload = self._read_json_body()
+        relative_path = payload.get("path") or f"{DATA_URL_PREFIX}/nutrition/plan.json"
+        raw = payload.get("excluded")
+        if not isinstance(raw, list):
+            raise ValueError("Invalid excluded list")
+
+        target_path = self._resolve_data_path(relative_path)
+        plan = json.loads(target_path.read_text(encoding="utf-8"))
+        known = {str(item.get("id", "")) for item in plan.get("ingredients") or [] if isinstance(item, dict)}
+        plan["excluded_ingredients"] = [
+            value for value in dict.fromkeys(str(item).strip() for item in raw)
+            if value and value in known
+        ]
+
+        self._write_document(target_path, plan)
+        self._export_mobile_snapshot()
+        self._send_json(HTTPStatus.OK, {"ok": True, "path": relative_path,
+                                        "excluded": plan["excluded_ingredients"]})
 
     def _handle_save_nutrition(self) -> None:
         payload = self._read_json_body()
@@ -3470,8 +3566,29 @@ def apply_outbox_command(command_path: Path, host: str) -> None:
         return
 
     action = command.get("action")
-    if action not in {"set_paid", "update_entry", "create_entry", "delete_entry", "update_income"}:
+    if action not in {"set_paid", "update_entry", "create_entry", "delete_entry",
+                      "update_income", "randomize_nutrition", "set_nutrition_exclusions"}:
         reject_outbox_command(command_path, f"acción desconocida: {action!r}")
+        return
+
+    # El plan alimentario tampoco pasa por el camino de los movimientos: son
+    # intenciones sobre el plan entero, y el servidor las resuelve contra el
+    # archivo — el teléfono manda qué quiere, no el documento.
+    if action == "randomize_nutrition":
+        body = {"path": str(command.get("path", ""))}
+        if command.get("day_index") is not None:
+            body["day_index"] = int(command["day_index"])
+        post_outbox_command(command_path, host, "/api/nutrition/randomize", body)
+        return
+    if action == "set_nutrition_exclusions":
+        excluded = command.get("excluded")
+        if not isinstance(excluded, list):
+            reject_outbox_command(command_path, "exclusiones inválidas")
+            return
+        post_outbox_command(command_path, host, "/api/nutrition/exclusions", {
+            "path": str(command.get("path", "")),
+            "excluded": excluded,
+        })
         return
 
     # Los ingresos salen antes: no viven en "entries" sino en la lista de un mes

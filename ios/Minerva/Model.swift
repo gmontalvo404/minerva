@@ -172,6 +172,9 @@ struct DebtOption: Decodable, Identifiable {
 /// solo pinta lo que el servidor dejó escrito.
 struct NutritionSnapshot: Decodable {
     let generatedAt: String?
+    /// A qué archivo apuntan el dado y las exclusiones.
+    var planPath = ""
+    var ingredients: [PlanIngredient] = []
     var week: [PlanDay] = []
     var catalog: [String: [PlannedMeal]] = [:]
     /// Pares [título, texto], tal como los guarda el plan.
@@ -182,7 +185,7 @@ struct NutritionSnapshot: Decodable {
     var shopping: ShoppingList?
 
     private enum CodingKeys: String, CodingKey {
-        case generatedAt, week, catalog, groundRules
+        case generatedAt, planPath, ingredients, week, catalog, groundRules
         case condimentsYes, condimentsNo, excludedIngredients, shopping
     }
 
@@ -193,6 +196,8 @@ struct NutritionSnapshot: Decodable {
     init(from decoder: Decoder) throws {
         let box = try decoder.container(keyedBy: CodingKeys.self)
         generatedAt = try box.decodeIfPresent(String.self, forKey: .generatedAt)
+        planPath = try box.decodeIfPresent(String.self, forKey: .planPath) ?? ""
+        ingredients = try box.decodeIfPresent([PlanIngredient].self, forKey: .ingredients) ?? []
         week = try box.decodeIfPresent([PlanDay].self, forKey: .week) ?? []
         catalog = try box.decodeIfPresent([String: [PlannedMeal]].self, forKey: .catalog) ?? [:]
         groundRules = try box.decodeIfPresent([[String]].self, forKey: .groundRules) ?? []
@@ -243,6 +248,16 @@ enum MealSlot: String, CaseIterable, Identifiable {
         case .dinner: return "moon"
         }
     }
+}
+
+struct PlanIngredient: Decodable, Identifiable {
+    let id: String
+    let name: String
+    let labels: [String]
+    let store: String
+
+    /// La etiqueta con la que se agrupa en la pantalla de exclusiones.
+    var mainLabel: String { labels.first ?? "Sin categoría" }
 }
 
 struct PlanDay: Decodable, Identifiable {

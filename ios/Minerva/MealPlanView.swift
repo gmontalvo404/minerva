@@ -8,6 +8,10 @@ import SwiftUI
 /// La semana hecha pantalla: un día por tarjeta, con sus cuatro comidas.
 struct MealWeekScreen: View {
     @ObservedObject var store: DashboardStore
+    /// Sin sesión real no hay Mac que aplique el comando: el dado se ve, pero
+    /// avisa en vez de fingir que hizo algo.
+    let live: Bool
+    @State private var rolled: String?
     @Environment(\.colorScheme) private var scheme
 
     private var theme: Theme { .of(scheme) }
@@ -16,9 +20,51 @@ struct MealWeekScreen: View {
         PlanScaffold(theme: theme) {
             let plan = store.nutrition
             if let plan, !plan.week.isEmpty {
-                ForEach(plan.week) { day in
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        Button {
+                            roll(path: plan.planPath, dayIndex: nil, note: "Randomizando la semana…")
+                        } label: {
+                            Label("Randomizar semana", systemImage: "die.face.5")
+                                .font(.forum(16))
+                                .frame(maxWidth: .infinity)
+                                .frame(minHeight: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(live ? theme.heading : theme.muted)
+                        .background(inputWell)
+                        .disabled(!live)
+
+                        NavigationLink(value: RootView.Route.mealPlan(.exclusions)) {
+                            Label("Excluir", systemImage: "xmark.circle")
+                                .font(.forum(16))
+                                .frame(maxWidth: .infinity)
+                                .frame(minHeight: 44)
+                                .foregroundStyle(theme.heading)
+                                .background(inputWell)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if let rolled {
+                        Text(rolled)
+                            .font(.forum(13))
+                            .foregroundStyle(theme.muted)
+                    } else if !live {
+                        Text("El dado y las exclusiones necesitan la sesión real: el demo va empacado y nadie lo aplica.")
+                            .font(.forum(13))
+                            .foregroundStyle(theme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if !plan.excludedIngredients.isEmpty {
+                        Text("\(plan.excludedIngredients.count) alimento(s) fuera de la semana.")
+                            .font(.forum(13))
+                            .foregroundStyle(theme.muted)
+                    }
+                }
+                .card(theme)
+
+                ForEach(Array(plan.week.enumerated()), id: \.element.id) { index, day in
                     VStack(alignment: .leading, spacing: 10) {
-                        HStack {
+                        HStack(spacing: 8) {
                             Text(day.day)
                                 .font(.forum(19))
                                 .foregroundStyle(theme.heading)
@@ -26,6 +72,18 @@ struct MealWeekScreen: View {
                             Text(Format.copNoCode(day.cost))
                                 .font(.forum(15))
                                 .foregroundStyle(theme.muted)
+                            if live {
+                                Button {
+                                    roll(path: plan.planPath, dayIndex: index, note: "Randomizando \(day.day)…")
+                                } label: {
+                                    Image(systemName: "die.face.5")
+                                        .font(.system(size: 15))
+                                        .foregroundStyle(theme.accent)
+                                        .frame(width: 32, height: 32)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Randomizar \(day.day)")
+                            }
                         }
                         ForEach(day.meals) { meal in
                             MealRow(meal: meal, theme: theme)
@@ -37,6 +95,107 @@ struct MealWeekScreen: View {
                 PlanEmpty(theme: theme)
             }
         }
+    }
+
+    private var inputWell: some View {
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(theme.bg)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(theme.line, lineWidth: 1)
+            )
+    }
+
+    /// El comando se va al buzón; la semana nueva llega con el próximo
+    /// snapshot, así que aquí solo se avisa que salió.
+    private func roll(path: String, dayIndex: Int?, note: String) {
+        Outbox.shared.queueRandomizeNutrition(path: path, dayIndex: dayIndex)
+        rolled = note
+    }
+}
+
+/// Qué alimentos quedan fuera. Tocar uno lo saca o lo devuelve; el plan se
+/// rehace en el Mac y vuelve con el próximo snapshot.
+struct ExclusionsScreen: View {
+    @ObservedObject var store: DashboardStore
+    let live: Bool
+    @State private var excluded: Set<String> = []
+    @State private var loaded = false
+    @Environment(\.colorScheme) private var scheme
+
+    private var theme: Theme { .of(scheme) }
+
+    var body: some View {
+        let plan = store.nutrition
+        PlanScaffold(theme: theme) {
+            if let plan, !plan.ingredients.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Una comida desaparece de la semana y del dado en cuanto usa un alimento excluido.")
+                        .font(.forum(14))
+                        .foregroundStyle(theme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !live {
+                        Text("Solo en la sesión real: el demo va empacado.")
+                            .font(.forum(13))
+                            .foregroundStyle(theme.negative)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .card(theme)
+
+                ForEach(Self.grouped(plan.ingredients), id: \.label) { group in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Eyebrow(group.label, theme)
+                        ForEach(group.items) { ingredient in
+                            Button {
+                                toggle(ingredient.id, path: plan.planPath)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: excluded.contains(ingredient.id)
+                                        ? "xmark.circle.fill" : "circle")
+                                        .font(.system(size: 17))
+                                        .foregroundStyle(excluded.contains(ingredient.id)
+                                            ? theme.negative : theme.muted)
+                                    Text(ingredient.name)
+                                        .font(.forum(16))
+                                        .foregroundStyle(theme.heading)
+                                        .strikethrough(excluded.contains(ingredient.id))
+                                        .lineLimit(1)
+                                    Spacer()
+                                }
+                                .frame(minHeight: 40)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(!live)
+                        }
+                    }
+                    .card(theme)
+                }
+            } else {
+                PlanEmpty(theme: theme, message: "El catálogo de alimentos aún no llega.")
+            }
+        }
+        .onAppear {
+            // Solo la primera vez: un snapshot que llegue después no debe
+            // pisar lo que se acaba de marcar.
+            guard !loaded else { return }
+            excluded = Set(plan?.excludedIngredients ?? [])
+            loaded = true
+        }
+    }
+
+    private func toggle(_ id: String, path: String) {
+        if excluded.contains(id) { excluded.remove(id) } else { excluded.insert(id) }
+        Outbox.shared.queueNutritionExclusions(path: path, excluded: excluded.sorted())
+    }
+
+    /// Por etiqueta, con la más poblada primero — el mismo orden de la web.
+    private static func grouped(_ items: [PlanIngredient]) -> [(label: String, items: [PlanIngredient])] {
+        var buckets: [String: [PlanIngredient]] = [:]
+        for item in items { buckets[item.mainLabel, default: []].append(item) }
+        return buckets
+            .map { (label: $0.key, items: $0.value.sorted { $0.name < $1.name }) }
+            .sorted { ($0.items.count, $1.label) > ($1.items.count, $0.label) }
     }
 }
 
