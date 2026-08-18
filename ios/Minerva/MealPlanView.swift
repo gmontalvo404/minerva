@@ -12,6 +12,7 @@ struct MealWeekScreen: View {
     /// avisa en vez de fingir que hizo algo.
     let live: Bool
     @State private var rolled: String?
+    @State private var failed = false
     @Environment(\.colorScheme) private var scheme
 
     private var theme: Theme { .of(scheme) }
@@ -48,7 +49,8 @@ struct MealWeekScreen: View {
                     if let rolled {
                         Text(rolled)
                             .font(.forum(13))
-                            .foregroundStyle(theme.muted)
+                            .foregroundStyle(failed ? theme.negative : theme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
                     } else if !live {
                         Text("El dado y las exclusiones necesitan la sesión real: el demo va empacado y nadie lo aplica.")
                             .font(.forum(13))
@@ -107,10 +109,12 @@ struct MealWeekScreen: View {
     }
 
     /// El comando se va al buzón; la semana nueva llega con el próximo
-    /// snapshot, así que aquí solo se avisa que salió.
+    /// snapshot. Si no salió, se dice — antes esto avisaba que iba en camino
+    /// pasara lo que pasara, y un fallo se veía igual que un éxito lento.
     private func roll(path: String, dayIndex: Int?, note: String) {
-        Outbox.shared.queueRandomizeNutrition(path: path, dayIndex: dayIndex)
-        rolled = note
+        let result = Outbox.shared.queueRandomizeNutrition(path: path, dayIndex: dayIndex)
+        rolled = result.problem ?? note
+        failed = result.problem != nil
     }
 }
 
@@ -121,6 +125,7 @@ struct ExclusionsScreen: View {
     let live: Bool
     @State private var excluded: Set<String> = []
     @State private var loaded = false
+    @State private var problem: String?
     @Environment(\.colorScheme) private var scheme
 
     private var theme: Theme { .of(scheme) }
@@ -138,6 +143,12 @@ struct ExclusionsScreen: View {
                         Text("Solo en la sesión real: el demo va empacado.")
                             .font(.forum(13))
                             .foregroundStyle(theme.negative)
+                    }
+                    if let problem {
+                        Text(problem)
+                            .font(.forum(13))
+                            .foregroundStyle(theme.negative)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -186,7 +197,7 @@ struct ExclusionsScreen: View {
 
     private func toggle(_ id: String, path: String) {
         if excluded.contains(id) { excluded.remove(id) } else { excluded.insert(id) }
-        Outbox.shared.queueNutritionExclusions(path: path, excluded: excluded.sorted())
+        problem = Outbox.shared.queueNutritionExclusions(path: path, excluded: excluded.sorted()).problem
     }
 
     /// Por etiqueta, con la más poblada primero — el mismo orden de la web.

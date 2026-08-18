@@ -224,39 +224,62 @@ final class Outbox: ObservableObject {
 
     /// Finalizar una deuda: el servidor escribe el abono que falta en el mes
     /// corriente. Viaja la intención — el saldo lo calcula quien lo sabe.
-    func queueSettleDebt(path: String, debtId: String) {
-        guard !path.isEmpty, !debtId.isEmpty else { return }
-        writePlanCommand([
+    @discardableResult
+    func queueSettleDebt(path: String, debtId: String) -> CommandResult {
+        guard !path.isEmpty, !debtId.isEmpty else { return .noPath }
+        return writePlanCommand([
             "id": UUID().uuidString,
             "action": "settle_debt",
             "path": path,
             "debt_id": debtId,
-        ], verb: "finalizar-deuda")
+        ], verb: "finalizar-deuda") == nil ? .notWritten : .queued
     }
 
     /// El dado del plan alimentario. Con `dayIndex` tira un día; sin él, la
     /// semana entera. Viaja la intención, no el plan: el teléfono no lo tiene,
     /// y quien sabe qué comidas caben es el servidor.
-    func queueRandomizeNutrition(path: String, dayIndex: Int? = nil) {
-        guard !path.isEmpty else { return }
+    @discardableResult
+    func queueRandomizeNutrition(path: String, dayIndex: Int? = nil) -> CommandResult {
+        guard !path.isEmpty else { return .noPath }
         var payload: [String: Any] = [
             "id": UUID().uuidString,
             "action": "randomize_nutrition",
             "path": path,
         ]
         if let dayIndex { payload["day_index"] = dayIndex }
-        writePlanCommand(payload, verb: dayIndex == nil ? "randomizar-semana" : "randomizar-dia")
+        return writePlanCommand(payload, verb: dayIndex == nil ? "randomizar-semana" : "randomizar-dia") == nil
+            ? .notWritten : .queued
+    }
+
+    /// Qué pasó al intentar encolar. Antes esto se tragaba en silencio y la
+    /// pantalla decía que iba en camino aunque no hubiera salido nada.
+    enum CommandResult {
+        case queued
+        /// El snapshot no trae la ruta: servidor sin reiniciar desde que la
+        /// empezó a exportar.
+        case noPath
+        /// No se pudo escribir en la carpeta de iCloud.
+        case notWritten
+
+        var problem: String? {
+            switch self {
+            case .queued: return nil
+            case .noPath: return "El snapshot no trae la ruta del plan todavía. Arranca el servidor del Mac una vez para que la exporte."
+            case .notWritten: return "No pude escribir en la carpeta de iCloud. Revisa la carpeta elegida en Ajustes."
+            }
+        }
     }
 
     /// Qué alimentos quedan fuera de la semana.
-    func queueNutritionExclusions(path: String, excluded: [String]) {
-        guard !path.isEmpty else { return }
-        writePlanCommand([
+    @discardableResult
+    func queueNutritionExclusions(path: String, excluded: [String]) -> CommandResult {
+        guard !path.isEmpty else { return .noPath }
+        return writePlanCommand([
             "id": UUID().uuidString,
             "action": "set_nutrition_exclusions",
             "path": path,
             "excluded": excluded,
-        ], verb: "excluir-alimentos")
+        ], verb: "excluir-alimentos") == nil ? .notWritten : .queued
     }
 
     /// Los comandos del plan no se fusionan ni dejan fila "pendiente": no
