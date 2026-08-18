@@ -65,28 +65,11 @@ export function CreditPage({ language, onSidebar }: CreditPageProps) {
   const [sort, setSort] = useState<"asc" | "desc">("asc");
   const [usdCop, setUsdCop] = useState(0);
 
-  // #credit-view-controls: the section has a single view, so its button is
-  // pressed and inert. It is there to say where you are.
+  // The simulator has a single view and nothing to pick, so it adds nothing to
+  // the sidebar: the module list above it already says where you are.
   useEffect(() => {
-    onSidebar(
-      <div className="control-sidebar__credit-view">
-        <div className="field control-sidebar__view">
-          <span className="field__label">{t("view_label")}</span>
-          <section className="control-sidebar__months">
-            <button
-              type="button"
-              className="month-button control-sidebar__annual-button is-active"
-              aria-pressed="true"
-              aria-disabled="true"
-              tabIndex={-1}
-            >
-              {t("app_section_credit")}
-            </button>
-          </section>
-        </div>
-      </div>,
-    );
-  }, [onSidebar, t]);
+    onSidebar(null);
+  }, [onSidebar]);
 
   useEffect(() => {
     void getUsdCopRate()

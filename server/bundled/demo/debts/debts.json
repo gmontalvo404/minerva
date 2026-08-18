@@ -53,6 +53,24 @@
         "start_year": "demo",
         "start_month": "02-february"
       }
+    },
+    {
+      "id": "demo-nevera",
+      "name": {
+        "es": "Nevera",
+        "en": "Fridge"
+      },
+      "capital": 3200000,
+      "initial_investment": 200000,
+      "paid_installments": 12,
+      "term_months": 12,
+      "annual_interest_rate": "16.75",
+      "cash_flow_link": {
+        "description": "Cuota nevera",
+        "type": "debts",
+        "start_year": "demo",
+        "start_month": "01-january"
+      }
     }
   ]
 }

@@ -8,34 +8,75 @@ import type { Dataset } from "./lib/dataset";
 import { normalizeLanguage, translate } from "./lib/i18n";
 import type { Language } from "./lib/i18n";
 import { readStorage, STORAGE_KEYS, writeStorage } from "./lib/storage";
-import { ThemeToggle, ViewSwitch } from "./ui";
+import { Select, ThemeToggle, ViewSwitch } from "./ui";
 import type { ViewSwitchOption } from "./ui";
 
 export type Theme = "light" | "dark";
-const SECTIONS = ["cashflow", "debts", "credit", "nutrition"] as const;
+
+/** The two top-level sections. */
+const SECTIONS = ["finances", "nutrition"] as const;
 export type Section = (typeof SECTIONS)[number];
+
+/** What lives inside Finances, in the order the sidebar lists it. */
+const FINANCE_MODULES = ["cashflow", "debts", "credit"] as const;
+export type FinanceModule = (typeof FINANCE_MODULES)[number];
 
 function normalizeSection(value: unknown): Section {
   const section = String(value ?? "").trim().toLowerCase();
-  return (SECTIONS as readonly string[]).includes(section) ? (section as Section) : "cashflow";
+  if ((SECTIONS as readonly string[]).includes(section)) return section as Section;
+  // What the flat version remembered: cashflow, debts and credit were sections
+  // of their own, and all three moved inside Finances.
+  return "finances";
 }
 
-/** One path per section: /cashflow, /debts, /credit, /nutrition. */
+function normalizeModule(value: unknown): FinanceModule {
+  const module = String(value ?? "").trim().toLowerCase();
+  return (FINANCE_MODULES as readonly string[]).includes(module) ? (module as FinanceModule) : "cashflow";
+}
+
+/** One path per section, and one per module under Finances. */
 const SECTION_PATHS: Record<Section, string> = {
-  cashflow: "/cashflow",
-  debts: "/debts",
-  credit: "/credit",
+  finances: "/finances",
   nutrition: "/nutrition",
 };
+const MODULE_PATHS: Record<FinanceModule, string> = {
+  cashflow: "/finances/cashflow",
+  debts: "/finances/debts",
+  credit: "/finances/credit",
+};
+
+/** Finances always has one of its modules open, so its address names it too. */
+function canonicalPath(section: Section, module: FinanceModule): string {
+  return section === "finances" ? MODULE_PATHS[module] : SECTION_PATHS[section];
+}
 
 /** The path the browser is on, or "" while rendering on the server. */
 function currentPath(): string {
   return typeof window === "undefined" ? "" : window.location.pathname;
 }
 
-function sectionFromPath(pathname: string): Section | null {
+type Route = { section: Section; module?: FinanceModule; canonical: boolean };
+
+/**
+ * An address read back into a place in the app.
+ *
+ * `module` is absent on a bare /finances: that one is answered by whichever
+ * module was last open. `canonical` separates the addresses the app writes from
+ * the ones it merely accepts — /finances on its own, and the flat /debts of the
+ * version before Finances existed — so those get corrected in place instead of
+ * leaving a history entry for the back button to land on.
+ */
+function routeFromPath(pathname: string): Route | null {
   const clean = `/${pathname.replace(/^\/+|\/+$/g, "").toLowerCase()}`;
-  return SECTIONS.find((section) => SECTION_PATHS[section] === clean) ?? null;
+  if (clean === SECTION_PATHS.nutrition) return { section: "nutrition", canonical: true };
+
+  const nested = FINANCE_MODULES.find((module) => MODULE_PATHS[module] === clean);
+  if (nested) return { section: "finances", module: nested, canonical: true };
+
+  if (clean === SECTION_PATHS.finances) return { section: "finances", canonical: false };
+
+  const flat = FINANCE_MODULES.find((module) => `/${module}` === clean);
+  return flat ? { section: "finances", module: flat, canonical: false } : null;
 }
 
 /**
@@ -54,10 +95,17 @@ export function App() {
   const [theme, setTheme] = useState<Theme>(() =>
     readStorage(STORAGE_KEYS.theme) === "dark" ? "dark" : "light",
   );
-  // The address decides which section is open; the remembered one is the
-  // fallback for when you arrive at the bare root.
+  // The address decides where the app opens; what was remembered fills the
+  // blanks — the bare root, or /finances without a module.
   const [section, setSection] = useState<Section>(
-    () => sectionFromPath(currentPath()) ?? normalizeSection(readStorage(STORAGE_KEYS.appMode)),
+    () => routeFromPath(currentPath())?.section ?? normalizeSection(readStorage(STORAGE_KEYS.appMode)),
+  );
+  const [financeModule, setFinanceModule] = useState<FinanceModule>(
+    () =>
+      routeFromPath(currentPath())?.module ??
+      // The flat version kept the open module under appMode, so reading it as
+      // the fallback makes an upgrade open where it was left.
+      normalizeModule(readStorage(STORAGE_KEYS.financeModule) ?? readStorage(STORAGE_KEYS.appMode)),
   );
   const [sidebar, setSidebar] = useState<React.ReactNode>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -78,25 +126,30 @@ export function App() {
 
   useEffect(() => {
     writeStorage(STORAGE_KEYS.appMode, section);
+    writeStorage(STORAGE_KEYS.financeModule, financeModule);
 
-    const path = SECTION_PATHS[section];
+    const path = canonicalPath(section, financeModule);
     if (window.location.pathname === path) return;
-    // Coming from a section is navigation and deserves a history entry; landing
-    // on "/" and being sent to the remembered one is just an address fix.
-    const arrivedOnASection = sectionFromPath(window.location.pathname) !== null;
+    // Coming from an address the app wrote is navigation and deserves a history
+    // entry; anything else — "/", a bare /finances, a flat address from the
+    // previous version — is that address being corrected, not a move.
+    const arrived = routeFromPath(window.location.pathname);
     const url = path + window.location.search + window.location.hash;
-    if (arrivedOnASection) {
-      window.history.pushState({ section }, "", url);
+    const state = { section, module: financeModule };
+    if (arrived?.canonical) {
+      window.history.pushState(state, "", url);
     } else {
-      window.history.replaceState({ section }, "", url);
+      window.history.replaceState(state, "", url);
     }
-  }, [section]);
+  }, [section, financeModule]);
 
   // Back and forward move between sections instead of leaving the app.
   useEffect(() => {
     const onPopState = () => {
-      const next = sectionFromPath(window.location.pathname);
-      if (next) setSection(next);
+      const route = routeFromPath(window.location.pathname);
+      if (!route) return;
+      setSection(route.section);
+      if (route.module) setFinanceModule(route.module);
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -110,7 +163,8 @@ export function App() {
   useEffect(() => {
     const shell = contentRef.current;
     if (!shell) return;
-    const key = `${STORAGE_KEYS.scroll}:${section}`;
+    // Each module keeps its own offset: cash flow and debts are different reads.
+    const key = `${STORAGE_KEYS.scroll}:${canonicalPath(section, financeModule)}`;
 
     let frame = 0;
     const remember = () => {
@@ -147,16 +201,20 @@ export function App() {
       cancelAnimationFrame(frame);
       attempts = 180;
     };
-  }, [section]);
+  }, [section, financeModule]);
 
   const t = (key: string, params: Record<string, string | number> = {}) => translate(language, key, params);
 
   const sectionOptions: ViewSwitchOption<Section>[] = [
-    { value: "cashflow", label: t("app_section_cash_flow") },
-    { value: "debts", label: t("app_section_debts") },
-    { value: "credit", label: t("app_section_credit") },
+    { value: "finances", label: t("app_section_finances") },
     { value: "nutrition", label: t("app_section_nutrition") },
   ];
+
+  const moduleLabels: Record<FinanceModule, string> = {
+    cashflow: t("app_section_cash_flow"),
+    debts: t("app_section_debts"),
+    credit: t("app_section_credit"),
+  };
 
   const datasetOptions: ViewSwitchOption<Dataset>[] = [
     { value: "live", label: "Live", title: t("dataset_live_hint") },
@@ -213,14 +271,38 @@ export function App() {
       </header>
 
       <aside className="control-sidebar">
-        <div className="control-sidebar__inner">{sidebar}</div>
+        <div className="control-sidebar__inner">
+          {/* Which module of Finances is open belongs here, above whatever
+              controls that module puts in the sidebar for itself. It is the
+              same dropdown the year uses right below it, so one pick reads
+              like the other. */}
+          {section === "finances" ? (
+            <div className="control-sidebar__controls">
+              <div className="field">
+                <span className="field__label">{t("module_label")}</span>
+                <Select
+                  label={t("module_label")}
+                  options={FINANCE_MODULES.map((module) => ({
+                    value: module,
+                    label: moduleLabels[module],
+                  }))}
+                  value={financeModule}
+                  onChange={setFinanceModule}
+                />
+              </div>
+            </div>
+          ) : null}
+          {sidebar}
+        </div>
       </aside>
 
       <div className="content-shell" ref={contentRef}>
         <main className="layout">
-          {section === "cashflow" ? <CashFlowPage {...pageProps} /> : null}
-          {section === "debts" ? <DebtsPage {...pageProps} /> : null}
-          {section === "credit" ? <CreditPage language={language} onSidebar={setSidebar} /> : null}
+          {section === "finances" && financeModule === "cashflow" ? <CashFlowPage {...pageProps} /> : null}
+          {section === "finances" && financeModule === "debts" ? <DebtsPage {...pageProps} /> : null}
+          {section === "finances" && financeModule === "credit" ? (
+            <CreditPage language={language} onSidebar={setSidebar} />
+          ) : null}
           {section === "nutrition" ? <NutritionPage {...pageProps} /> : null}
         </main>
       </div>

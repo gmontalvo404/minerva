@@ -170,7 +170,6 @@ const expected = [
 ];
 
 const monthlyClasses = [
-  "control-sidebar__credit-view",
   "control-sidebar__debt-view",
   "control-sidebar__nutrition-view",
   "control-sidebar__months",
@@ -302,7 +301,6 @@ const STYLELESS_CLASSES: string[] = [
   "pretty-select-menu--type",
   "pretty-select-menu--category",
   "pretty-select-menu--year",
-  "control-sidebar__credit-view",
   "control-sidebar__nutrition-view",
   "nutrition-unit-input",
 ];
@@ -542,19 +540,43 @@ check(
 );
 
 /**
- * The address bar and the server have to agree on the section paths: if they
- * drift, reloading on a section serves a 404 instead of the app.
+ * The address bar and the server have to agree on every path the app answers:
+ * if they drift, reloading on one serves a 404 instead of the app. That is the
+ * two sections, the modules nested under Finances, and the flat addresses of
+ * the version before Finances existed, which the client still takes in and
+ * rewrites to their nested home.
  */
 const appSource = readFileSync("./src/App.tsx", "utf8");
-const routes = [...appSource.matchAll(/^ {2}(\w+): "\/([a-z]+)",$/gm)].map((match) => match[2]);
+const declared = [...appSource.matchAll(/^ {2}\w+: "\/([a-z/]+)",$/gm)].map((match) => match[1] as string);
+const flatLegacy = [...(appSource.match(/const FINANCE_MODULES = \[([^\]]*)\]/)?.[1] ?? "").matchAll(/"([a-z]+)"/g)]
+  .map((match) => match[1] as string);
+const routes = [...new Set([...declared, ...flatLegacy])];
 const serverBlock = readFileSync("../server/server.py", "utf8").match(/REACT_SECTION_PATHS = frozenset\(\{([^}]*)\}\)/);
-const serverRoutes = [...(serverBlock?.[1] ?? "").matchAll(/"([a-z]+)"/g)].map((match) => match[1]);
+const serverRoutes = [...(serverBlock?.[1] ?? "").matchAll(/"([a-z/]+)"/g)].map((match) => match[1]);
 const sameRoutes =
   routes.length > 0 && [...routes].sort().join(",") === [...serverRoutes].sort().join(",");
 check(
   "las rutas del cliente y del servidor coinciden",
   sameRoutes,
   sameRoutes ? routes.map((route) => `/${route}`).join(" ") : `cliente ${routes} vs servidor ${serverRoutes}`,
+);
+
+/**
+ * The keys of the Vite proxy are prefixes, so one of them matching the start of
+ * an app route hands that address to the Python server, which answers with the
+ * built index.html from dist: the page then asks for a bundle the dev server
+ * does not serve and comes up blank. That is exactly how /finances/cashflow
+ * broke the day it was added next to the older /finance proxy.
+ */
+const viteConfig = readFileSync("./vite.config.ts", "utf8");
+const proxyPrefixes = [...viteConfig.matchAll(/^ {6}"(\/[a-z/]+)":/gm)].map((match) => match[1] as string);
+const swallowed = routes.filter((route) => proxyPrefixes.some((prefix) => `/${route}`.startsWith(prefix)));
+check(
+  "ningún proxy de Vite se traga una ruta de la app",
+  proxyPrefixes.length > 0 && swallowed.length === 0,
+  swallowed.length
+    ? `tragadas: ${swallowed.map((route) => `/${route}`).join(", ")}`
+    : `${proxyPrefixes.length} prefijos (${proxyPrefixes.join(" ")}) vs ${routes.length} rutas`,
 );
 
 console.log(failures === 0 ? "\nTODO OK" : `\n${failures} FALLOS`);

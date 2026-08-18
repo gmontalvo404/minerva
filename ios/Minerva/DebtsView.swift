@@ -8,11 +8,10 @@ struct DebtsHome: View {
     /// nil = el snapshot de deudas aún no llega (servidor sin reiniciar).
     let debts: [DebtDetail]?
     let live: Bool
+    /// Cuál de las dos listas pintar. Lo decide el selector de la portada;
+    /// cancelada = sin cuotas pendientes, no hay bandera aparte.
+    let showCanceled: Bool
     let theme: Theme
-
-    /// El switch Activas / Canceladas de la web: cancelada = sin cuotas
-    /// pendientes, no hay bandera aparte.
-    @State private var showCanceled = false
 
     var body: some View {
         if let debts {
@@ -20,7 +19,6 @@ struct DebtsHome: View {
                 showCanceled ? $0.remainingInstallments <= 0 : $0.remainingInstallments > 0
             }
             kpis(for: visible)
-            filterChips
             if visible.isEmpty {
                 Text(showCanceled ? "Sin deudas canceladas." : "Sin deudas activas.")
                     .font(.forum(16))
@@ -88,23 +86,6 @@ struct DebtsHome: View {
         }
     }
 
-    private var filterChips: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
-            Button {
-                showCanceled = false
-            } label: {
-                SelectorBox(label: "Activas", active: !showCanceled, theme: theme)
-            }
-            .buttonStyle(.plain)
-            Button {
-                showCanceled = true
-            } label: {
-                SelectorBox(label: "Canceladas", active: showCanceled, theme: theme)
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
     private func debtCard(_ debt: DebtDetail) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
@@ -123,7 +104,7 @@ struct DebtsHome: View {
 
             ProgressTrack(value: debt.progress / 100, theme: theme)
 
-            Text("\(debt.paidInstallments) pagadas · \(debt.remainingInstallments) pendientes · \(Format.percent1(debt.annualInterestRate)) anual")
+            Text("\(debt.paidInstallments) pagadas · \(debt.remainingInstallments) pendientes · \(Format.rate(debt.annualInterestRate)) anual")
                 .font(.forum(13))
                 .foregroundStyle(theme.muted)
 
@@ -192,6 +173,31 @@ private struct ProgressTrack: View {
 
 /// La deuda empujada, resuelta contra el store en cada re-render: un
 /// snapshot nuevo la repinta sola, como el mes.
+/// La lista de deudas hecha pantalla. Se abre desde Vista en la portada —
+/// Activas o Canceladas — en vez de aparecer debajo del selector, igual que
+/// el resumen anual y los meses de cash flow.
+struct DebtsListScreen: View {
+    @ObservedObject var store: DashboardStore
+    let canceled: Bool
+    let live: Bool
+    @Environment(\.colorScheme) private var scheme
+
+    private var theme: Theme { .of(scheme) }
+
+    var body: some View {
+        ZStack {
+            theme.bg.ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    DebtsHome(debts: store.debtDetails, live: live, showCanceled: canceled, theme: theme)
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 10)
+            }
+        }
+    }
+}
+
 struct DebtScheduleScreen: View {
     @ObservedObject var store: DashboardStore
     let debtId: String
@@ -248,7 +254,7 @@ struct DebtScheduleView: View {
             )
             KpiCard(
                 title: "Interés anual",
-                value: Format.percent1(debt.annualInterestRate),
+                value: Format.rate(debt.annualInterestRate),
                 detail: "Efectivo anual"
             )
             KpiCard(

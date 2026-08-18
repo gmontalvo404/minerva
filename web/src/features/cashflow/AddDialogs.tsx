@@ -4,6 +4,7 @@ import type { DebtDetail } from "../../lib/api";
 import type { CategoryOption } from "../../lib/categories";
 import type { Language } from "../../lib/i18n";
 import { Dialog, Select } from "../../ui";
+import { DEBT_CATEGORY } from "../../lib/categories";
 import { DebtPicker } from "./DebtPicker";
 import { TYPE_META, tint } from "./EntriesTable";
 import { ENTRY_TYPES } from "./types";
@@ -45,6 +46,8 @@ export function AddEntryDialog({
   const [type, setType] = useState<EntryType>("needs");
   const [category, setCategory] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
+  /** True while the abono is worth more than the debts it is aimed at. */
+  const [overpaying, setOverpaying] = useState(false);
   const [paid, setPaid] = useState(true);
   const [linkedDebts, setLinkedDebts] = useState<string[]>([]);
 
@@ -52,7 +55,14 @@ export function AddEntryDialog({
   // section when the type changes.
   const chooseType = (next: EntryType) => {
     setType(next);
-    if (next !== "debts") setLinkedDebts([]);
+    if (next !== "debts") {
+      setLinkedDebts([]);
+      return;
+    }
+    // Un movimiento de deudas es de la categoría Debt salvo excepción, así que
+    // se elige sola. Queda a un clic de cambiarla: esto es un punto de partida,
+    // no una decisión tomada.
+    setCategory(DEBT_CATEGORY);
   };
 
   const toggleDebt = (id: string, checked: boolean) => {
@@ -99,6 +109,7 @@ export function AddEntryDialog({
             type="button"
             className="button button--compact button--entry-add"
             onClick={() => void submit()}
+            disabled={overpaying}
           >
             {t("create_entry_submit")}
           </button>
@@ -198,6 +209,8 @@ export function AddEntryDialog({
             hint={t("create_entry_debt_hint")}
             emptyMessage={t("create_entry_debt_empty")}
             language={language}
+            amount={Number(amount) || 0}
+            onOverpay={setOverpaying}
           />
         ) : null}
       </div>

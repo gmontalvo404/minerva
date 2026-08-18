@@ -14,12 +14,28 @@ final class DashboardStore: ObservableObject {
     /// El módulo de deudas completo; nil mientras el snapshot no llegue.
     @Published var debtDetails: [DebtDetail]?
 
+    /// Las deudas como las necesita el editor: con su saldo. Si el detalle aún
+    /// no llegó se cae al manifiesto, que trae id y nombre pero no números —
+    /// entonces el servidor sigue siendo quien atrapa un abono de más.
+    var debtOptionsWithBalance: [DebtOption] {
+        guard let debtDetails, !debtDetails.isEmpty else { return debts }
+        return debtDetails.map {
+            DebtOption(id: $0.id, name: $0.displayName, remainingBalance: $0.remainingBalance)
+        }
+    }
+
     /// El guardado del demo: el cambio entra directo al dashboard en
     /// memoria, con el mes y el anual re-agregados por DemoMath. Se pierde
     /// al salir del demo — es un sandbox, como el de la web.
     func applyDemoEdit(_ changes: [String: Outbox.PendingValue], to entry: Entry) {
         guard let response else { return }
         self.response = DemoMath.applying(changes, to: entry, in: response)
+    }
+
+    /// Marcar un ingreso como recibido en el demo, al instante.
+    func applyDemoIncomeReceived(_ received: Bool, income: Income) {
+        guard let response else { return }
+        self.response = DemoMath.applyingReceived(received, to: income, in: response)
     }
 
     /// Crear (o duplicar, si viene el original) en el demo, al instante.
@@ -50,11 +66,14 @@ private struct MonthDetailScreen: View {
                 year: response.year,
                 editable: editable,
                 categories: store.categories,
-                debts: store.debts,
+                // Del detalle, no del manifiesto: el editor necesita el saldo
+                // para no dejar abonar a una deuda saldada ni pasarse de él.
+                debts: store.debtOptionsWithBalance,
                 // Sin sesión real, todo existe igual: el demo aplica en
                 // memoria y enseña la mecánica completa sin tocar nada.
                 demo: editable ? nil : DemoActions(
                     update: { store.applyDemoEdit($0, to: $1) },
+                    updateIncome: { store.applyDemoIncomeReceived($0, income: $1) },
                     create: { store.applyDemoCreate($0, monthIndex: monthIndex, after: $1) },
                     delete: { store.applyDemoDelete($0) }
                 )
@@ -77,13 +96,36 @@ private struct AnnualScreen: View {
 /// La portada: como el sidebar de la web — eliges el año y la vista (anual o
 /// un mes) en cuadritos, y la pantalla elegida se abre encima. Los datos
 /// llegan del snapshot que el servidor deja en iCloud; solo visualiza.
-/// Los módulos de la web. En iOS existen cash flow y deudas; los demás se
-/// muestran y avisan que aún viven en la web.
+/// Las dos secciones de la web. El plan alimentario va aparte; todo lo que es
+/// dinero cuelga de Finanzas. Se llama AppSection y no Section porque ese
+/// nombre ya es de SwiftUI, y SettingsView lo usa en su formulario.
+enum AppSection: String, CaseIterable, Identifiable {
+    case finances
+    case meals
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .finances: return "Finanzas"
+        case .meals: return "Plan alimentario"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .finances: return "chart.bar"
+        case .meals: return "fork.knife"
+        }
+    }
+}
+
+/// Lo que vive dentro de Finanzas, en el mismo orden que la barra lateral de la
+/// web. En iOS existen cash flow y deudas; el simulador avisa que vive allá.
 enum Module: String, CaseIterable, Identifiable {
     case cashflow
     case debts
     case credit
-    case meals
 
     var id: String { rawValue }
 
@@ -92,7 +134,6 @@ enum Module: String, CaseIterable, Identifiable {
         case .cashflow: return "Cash flow"
         case .debts: return "Deudas"
         case .credit: return "Crédito"
-        case .meals: return "Plan alimentario"
         }
     }
 
@@ -101,7 +142,6 @@ enum Module: String, CaseIterable, Identifiable {
         case .cashflow: return "chart.bar"
         case .debts: return "creditcard"
         case .credit: return "percent"
-        case .meals: return "fork.knife"
         }
     }
 }
@@ -134,6 +174,7 @@ struct RootView: View {
     @State private var loading = false
     @State private var errorMessage: String?
     @State private var year: String?
+    @State private var section: AppSection = .finances
     @State private var module: Module = .cashflow
     @State private var showSettings = false
     @Environment(\.colorScheme) private var scheme
@@ -156,6 +197,7 @@ struct RootView: View {
     enum Route: Hashable {
         case annual
         case month(Int)
+        case debts(canceled: Bool)
         case debt(String)
     }
 
@@ -272,24 +314,31 @@ struct RootView: View {
         } else if let message = errorMessage {
             errorView(message)
         } else if let response {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    selector(for: response)
-                    if module == .debts {
-                        DebtsHome(debts: store.debtDetails, live: dataset == .live, theme: theme)
+            // La tarjeta del selector se estira hasta abajo, así el pie con
+            // el "Calculado hace…" queda al final de la pantalla y no colgando
+            // a media altura cuando el módulo abierto tiene pocos cuadritos.
+            GeometryReader { geo in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        selector(for: response)
+                        if dataset == .demo {
+                            Text("Estás viendo el demo.")
+                                .font(.forum(14))
+                                .foregroundStyle(theme.muted)
+                                .frame(maxWidth: .infinity)
+                        }
+                        snapshotFooter
                     }
-                    if dataset == .demo {
-                        Text("Estás viendo el demo.")
-                            .font(.forum(14))
-                            .foregroundStyle(theme.muted)
-                            .frame(maxWidth: .infinity)
-                    }
-                    snapshotFooter
+                    .padding(.horizontal)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+                    // geo.size.height es la zona útil, sin el indicador de
+                    // inicio. Se le devuelve casi todo: la tarjeta y el
+                    // "Calculado hace…" bajan hasta rozarlo, sin taparlo.
+                    .frame(minHeight: geo.size.height + max(geo.safeAreaInsets.bottom - 10, 0), alignment: .top)
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 10)
+                .refreshable { await load() }
             }
-            .refreshable { await load() }
         } else if loading {
             ProgressView("Cargando…")
                 .tint(theme.accent)
@@ -303,71 +352,101 @@ struct RootView: View {
         }
     }
 
-    /// El sidebar hecho pantalla: módulo, año y vista en cuadritos.
+    /// El sidebar hecho pantalla: sección, módulo, año y vista en cuadritos.
+    /// Los dos niveles se anidan igual que en la web — el de módulo solo
+    /// aparece dentro de Finanzas.
     private func selector(for response: DashboardResponse) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Eyebrow("Módulo", theme)
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
-                ForEach(Module.allCases) { candidate in
+            Eyebrow("Sección", theme)
+            LazyVGrid(columns: pairColumns, spacing: 8) {
+                ForEach(AppSection.allCases) { candidate in
                     Button {
-                        module = candidate
+                        section = candidate
                     } label: {
-                        SelectorBox(label: candidate.label, active: candidate == module, theme: theme)
+                        SelectorBox(label: candidate.label, active: candidate == section, theme: theme)
                     }
                     .buttonStyle(.plain)
                 }
             }
 
-            if module == .debts {
-                // El módulo vive abajo, en sus propias tarjetas.
-                EmptyView()
-            } else if module != .cashflow {
-                comingSoon
+            if section != .finances {
+                comingSoon(label: section.label, icon: section.icon)
             } else {
-                if response.years.count > 1 {
-                    Eyebrow("Año", theme)
-                    LazyVGrid(columns: boxColumns, spacing: 8) {
-                        ForEach(response.years, id: \.self) { candidate in
-                            Button {
-                                year = candidate
-                            } label: {
-                                SelectorBox(
-                                    label: candidate,
-                                    active: candidate == response.year,
-                                    theme: theme
-                                )
-                            }
-                            .buttonStyle(.plain)
+                Eyebrow("Módulo", theme)
+                LazyVGrid(columns: pairColumns, spacing: 8) {
+                    ForEach(Module.allCases) { candidate in
+                        Button {
+                            module = candidate
+                        } label: {
+                            SelectorBox(label: candidate.label, active: candidate == module, theme: theme)
                         }
+                        .buttonStyle(.plain)
                     }
                 }
 
-                Eyebrow("Vista", theme)
-                if response.annual != nil {
-                    NavigationLink(value: Route.annual) {
-                        SelectorBox(label: "Anual", active: false, theme: theme)
+                if module == .debts {
+                    // Las listas viven abajo, en sus propias tarjetas, pero
+                    // elegir cuál se ve es un selector como los otros.
+                    Eyebrow("Vista", theme)
+                    LazyVGrid(columns: pairColumns, spacing: 8) {
+                        NavigationLink(value: Route.debts(canceled: false)) {
+                            SelectorBox(label: "Activas", active: false, theme: theme)
+                        }
+                        .buttonStyle(.plain)
+                        NavigationLink(value: Route.debts(canceled: true)) {
+                            SelectorBox(label: "Canceladas", active: false, theme: theme)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
-
-                    LazyVGrid(columns: boxColumns, spacing: 8) {
-                        ForEach(response.months) { month in
-                            NavigationLink(value: Route.month(month.index)) {
-                                SelectorBox(
-                                    label: Format.monthShort(month.index),
-                                    active: false,
-                                    theme: theme
-                                )
+                } else if module != .cashflow {
+                    comingSoon(label: module.label, icon: module.icon)
+                } else {
+                    if response.years.count > 1 {
+                        Eyebrow("Año", theme)
+                        LazyVGrid(columns: boxColumns, spacing: 8) {
+                            ForEach(response.years, id: \.self) { candidate in
+                                Button {
+                                    year = candidate
+                                } label: {
+                                    SelectorBox(
+                                        label: candidate,
+                                        active: candidate == response.year,
+                                        theme: theme
+                                    )
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
-                } else {
-                    Text("Sin datos para este año.")
-                        .font(.forum(16))
-                        .foregroundStyle(theme.muted)
+
+                    Eyebrow("Vista", theme)
+                    if response.annual != nil {
+                        NavigationLink(value: Route.annual) {
+                            SelectorBox(label: "Anual", active: false, theme: theme)
+                        }
+                        .buttonStyle(.plain)
+
+                        LazyVGrid(columns: boxColumns, spacing: 8) {
+                            ForEach(response.months) { month in
+                                NavigationLink(value: Route.month(month.index)) {
+                                    SelectorBox(
+                                        label: Format.monthShort(month.index),
+                                        active: false,
+                                        theme: theme
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    } else {
+                        Text("Sin datos para este año.")
+                            .font(.forum(16))
+                            .foregroundStyle(theme.muted)
+                    }
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .card(theme)
     }
 
@@ -381,18 +460,20 @@ struct RootView: View {
             AnnualScreen(store: store)
         case .month(let index):
             MonthDetailScreen(store: store, monthIndex: index, editable: dataset == .live)
+        case .debts(let canceled):
+            DebtsListScreen(store: store, canceled: canceled, live: dataset == .live)
         case .debt(let id):
             DebtScheduleScreen(store: store, debtId: id)
         }
     }
 
-    /// Los módulos que aún no existen en iOS avisan en vez de fingir.
-    private var comingSoon: some View {
+    /// Lo que aún no existe en iOS avisa en vez de fingir.
+    private func comingSoon(label: String, icon: String) -> some View {
         VStack(spacing: 8) {
-            Image(systemName: module.icon)
+            Image(systemName: icon)
                 .font(.system(size: 30))
                 .foregroundStyle(theme.muted)
-            Text("\(module.label) llega pronto a iOS")
+            Text("\(label) llega pronto a iOS")
                 .font(.forum(18))
                 .foregroundStyle(theme.heading)
             Text("Por ahora ese módulo vive en la web.")
@@ -405,6 +486,11 @@ struct RootView: View {
 
     private var boxColumns: [GridItem] {
         [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
+    }
+
+    /// Para los selectores de dos opciones: sección, módulo y la vista de deudas.
+    private var pairColumns: [GridItem] {
+        [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
     }
 
     private var setupPrompt: some View {

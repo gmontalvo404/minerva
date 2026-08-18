@@ -6,8 +6,10 @@ from it, kept as the reference the design system is measured against.
 
 Same backend as every client: `server/server.py` owns the data and the API.
 The production bundle in `web/dist` is served by the Python server itself at
-`/cashflow`, `/debts`, `/credit` and `/nutrition`; the Vite dev server only
-proxies `/api` and `/finance` to it.
+`/finances/cashflow`, `/finances/debts`, `/finances/credit` and `/nutrition`
+— plus the flat `/cashflow`, `/debts` and `/credit` of the version before
+Finances existed, which the app rewrites to their nested home. The Vite dev
+server only proxies `/api` and `/finance` to it.
 
 ## Run it
 
@@ -37,12 +39,14 @@ web/src/
     Button/, Select/, DataTable/, Card/, KpiCard/, ViewSwitch/,
     Tag/, Toggle/, Dialog/, Field/, EmptyState/
   lib/           <- api client, dataset paths, formatting, i18n, storage
-  features/      <- one folder per section of the app
+  features/      <- one folder per module of the app
     cashflow/      annual + monthly views, entry/income editing, history
     debts/         payment plan, schedules, cash-flow links
     credit/        amortization simulator
     nutrition/     the meal plan
-  App.tsx        <- shell: dataset, language, theme, section switch
+  App.tsx        <- shell: dataset, language, theme, and the two levels of
+                    navigation — Finances / Meal plan in the header, and the
+                    module inside Finances in the sidebar
 ```
 
 ## The rule that keeps the style from drifting

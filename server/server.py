@@ -63,7 +63,19 @@ DEMO_DATA_ROOT = (ROOT / DEMO_URL_PREFIX).resolve()
 YEAR_KEY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$", re.IGNORECASE)
 
 # The sections the React app answers for in the address bar.
-REACT_SECTION_PATHS = frozenset({"cashflow", "debts", "credit", "nutrition"})
+# Every address the React app answers to: the two sections, the modules that
+# live inside Finances, and the flat ones from before Finances existed — those
+# still have to reach the app, which rewrites them to their nested home.
+REACT_SECTION_PATHS = frozenset({
+    "finances",
+    "finances/cashflow",
+    "finances/debts",
+    "finances/credit",
+    "nutrition",
+    "cashflow",
+    "debts",
+    "credit",
+})
 ALLOWED_TYPES = {"needs", "wants", "savings", "debts"}
 # TYPE_ORDER / TYPE_DISPLAY_ORDER in app.js: savings leads the display order.
 TYPE_ORDER = ("needs", "wants", "savings", "debts")
@@ -466,6 +478,14 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                     "This entry is auto-generated from a debt. Only the paid status can be edited here; update the debt instead."
                 )
 
+        if "linked_debts" in normalized_updates or "amount_cop" in normalized_updates:
+            self._validate_debt_links(
+                relative_path,
+                normalized_updates.get("linked_debts", source_entry.get("linked_debts") or []),
+                normalized_updates.get("amount_cop", source_entry.get("amount_cop", 0)),
+                current_entry=source_entry,
+            )
+
         updated_entry.update(normalized_updates)
         if "paid" in normalized_updates:
             updated_entry.pop("active", None)
@@ -565,6 +585,13 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                     raise ValueError("Cannot insert a movement after a different type")
 
         new_entry = self._normalize_new_entry(entry_payload)
+        # Un movimiento nace sin nada descontado todavía, así que aquí el saldo
+        # de la deuda se mira tal cual está.
+        self._validate_debt_links(
+            relative_path,
+            new_entry.get("linked_debts") or [],
+            new_entry.get("amount_cop", 0),
+        )
         # El id va DESPUÉS de normalizar: _normalize_new_entry arma un dict
         # nuevo y se comería uno puesto antes — así nacían movimientos sin id.
         new_entry["id"] = self._next_entry_id(relative_path)
@@ -1175,6 +1202,20 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
                 index, income_month, self._read_month_entries(cash_flow_root, year, folder)
             )
             summary["source_path_by_type"] = self._month_source_paths(cash_flow_root, year, folder)
+            # Los ingresos viajan con su dirección, igual que los movimientos:
+            # sin ella el teléfono los pinta pero no puede señalar cuál marcar
+            # como recibido. La API de ingresos pide justo estos tres datos.
+            incomes_relative = f"{cash_flow_root}/{year}/incomes/incomes.json"
+            summary["incomes"] = [
+                {
+                    **income,
+                    "source_path": incomes_relative,
+                    "source_index": position,
+                    "month_index": index,
+                }
+                for position, income in enumerate(summary.get("incomes") or [])
+                if isinstance(income, dict)
+            ]
             months.append(summary)
 
         by_type = {key: 0.0 for key in sorted(ALLOWED_TYPES)}
@@ -1559,6 +1600,23 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             paid_installments = self._to_bounded_int(
                 debt.get("paid_installments", 0), minimum=0, maximum=term
             )
+            # Aquí el número del archivo manda sobre el calendario, así que el
+            # calendario tiene que decir lo mismo: sin fechas reales ninguna
+            # fila se marca sola y una deuda saldada se vería con todas las
+            # cuotas en blanco. Se chulean las primeras, que es el orden en que
+            # se pagan.
+            for row in schedule:
+                if 0 < row["period"] <= paid_installments:
+                    row["paid"] = True
+
+        # Una cuota que no cobra nada no está pendiente: la deuda se saldó antes
+        # de llegar a ella, normalmente a punta de abonos. Sin esto, la deuda
+        # cancelada temprano se queda con las últimas cuotas en círculo vacío,
+        # como si debiera algo. Va después de contar las derivadas, para no
+        # inflar las pagadas de una deuda enlazada al cash flow.
+        for row in schedule:
+            if row["period"] > 0 and row["total_payment"] <= 0:
+                row["paid"] = True
 
         active = sum(1 for row in schedule if row["period"] > 0 and row["total_payment"] > 0)
         remaining_row = schedule[paid_installments] if paid_installments < len(schedule) else schedule[-1]
@@ -2473,6 +2531,59 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             return bool(entry[legacy_key])
         return default
 
+    def _validate_debt_links(
+        self,
+        relative_path: str,
+        debt_ids: list,
+        amount: float,
+        *,
+        current_entry: dict | None = None,
+    ) -> None:
+        """Un abono no puede ir a una deuda saldada ni pasarse del saldo.
+
+        La misma regla que hacen cumplir los formularios de la web y del
+        teléfono, repetida aquí a propósito: el servidor es el único sitio por
+        el que pasan las tres apps, y un formulario se salta con un curl.
+
+        Cuando el movimiento ya estaba enlazado a la deuda, su propio abono ya
+        está descontado del saldo, así que se le devuelve para no rechazar la
+        edición de un pago que fue justo el que la saldó.
+        """
+        if not debt_ids:
+            return
+
+        _, root = resolve_dataset_path(relative_path)
+        _, debts, _ = self._load_debts(f"{dataset_url_prefix(root)}/debts/debts.json")
+        by_id = {str(item.get("id", "")): item for item in debts if isinstance(item, dict)}
+
+        already = {str(value) for value in (current_entry or {}).get("linked_debts", []) or []}
+        own = abs(self._to_finite_float((current_entry or {}).get("amount_cop", 0)))
+
+        for raw_id in debt_ids:
+            debt_id = str(raw_id)
+            debt = by_id.get(debt_id)
+            if debt is None:
+                raise ValueError(f"No existe la deuda {debt_id}.")
+
+            detail = self._build_debt_detail(
+                debt, self._debt_linked_payments_across_years(debt, debts)
+            )
+            raw_name = detail.get("name")
+            name = raw_name.get("es") if isinstance(raw_name, dict) else (raw_name or debt_id)
+            headroom = self._to_finite_float(detail.get("remaining_balance", 0))
+            if debt_id in already:
+                headroom += own
+
+            if headroom <= 0:
+                raise ValueError(
+                    f"La deuda «{name}» ya está cancelada: no admite más abonos."
+                )
+            if abs(amount) - headroom > 0.5:
+                raise ValueError(
+                    f"El abono supera el saldo de «{name}»: quedan "
+                    f"{headroom:,.0f} COP por pagar."
+                )
+
     def _normalize_updates(self, updates: dict) -> dict:
         normalized = {}
 
@@ -3269,8 +3380,26 @@ def apply_outbox_command(command_path: Path, host: str) -> None:
         return
 
     action = command.get("action")
-    if action not in {"set_paid", "update_entry", "create_entry", "delete_entry"}:
+    if action not in {"set_paid", "update_entry", "create_entry", "delete_entry", "update_income"}:
         reject_outbox_command(command_path, f"acción desconocida: {action!r}")
+        return
+
+    # Los ingresos salen antes: no viven en "entries" sino en la lista de un mes
+    # dentro de incomes.json, así que nada de lo que viene abajo les sirve.
+    if action == "update_income":
+        month_index = int(command.get("month_index", -1))
+        income_index = int(command.get("income_index", -1))
+        updates = command.get("updates") or {}
+        if not updates or month_index < 0 or income_index < 0:
+            reject_outbox_command(command_path, "comando de ingreso incompleto")
+            return
+        post_outbox_command(command_path, host, "/api/incomes/update", {
+            "path": str(command.get("path", "")),
+            "month_index": month_index,
+            "income_index": income_index,
+            "updates": updates,
+            "origin": command.get("device") or "iPhone",
+        })
         return
 
     relative_path = str(command.get("path", ""))

@@ -71,8 +71,10 @@
   --space-6: 24px;
   --space-8: 32px;
 
-  /* Control sizes, so every input and button lines up. */
-  --control-height: 44px;
+  /* Control sizes, so every input and button lines up. The height is the one
+     the header switch has always rendered; the sidebar buttons and the inputs
+     of the entry tables read it from here so the three cannot drift apart. */
+  --control-height: 40px;
   --control-height-sm: 34px;
   --control-padding: 0 var(--space-4);
   --transition: 160ms ease;

@@ -5,6 +5,9 @@ export const STORAGE_KEYS = {
   language: "cashflow-dashboard-language",
   dataset: "cashflow-dashboard-dataset",
   appMode: "cashflow-dashboard-app-mode",
+  /** Which module of Finances was open. Before Finances existed appMode held
+   *  it, so that key is the fallback the first time round. */
+  financeModule: "cashflow-dashboard-finance-module",
   /** The year, under the name the original gave it. */
   selectedFile: "cashflow-dashboard-selected-file",
   selectedMonth: "cashflow-dashboard-selected-month",

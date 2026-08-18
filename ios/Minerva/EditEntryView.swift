@@ -26,6 +26,31 @@ struct EditEntryView: View {
     @State private var paid: Bool
     /// A qué deudas abona: el DebtPicker de la web, hecho filas nativas.
     @State private var linkedDebts: Set<String>
+
+    /// Solo las que aún deben algo. Una deuda saldada no admite más abonos, así
+    /// que ni se ofrece; cuando el saldo no se conoce se deja pasar y decide el
+    /// servidor. La que ya estaba marcada se queda visible, para poder
+    /// desmarcarla en un movimiento viejo.
+    /// El nombre con el que los dos datasets guardan la categoría de deudas.
+    private static let debtCategory = "Debt"
+
+    private var payableDebts: [DebtOption] {
+        debts.filter { ($0.remainingBalance ?? 1) > 0 || linkedDebts.contains($0.id) }
+    }
+
+    /// Cuánto se puede abonar en total con lo que hay marcado.
+    private var linkedHeadroom: Double {
+        debts.filter { linkedDebts.contains($0.id) }
+            .reduce(0) { $0 + ($1.remainingBalance ?? .greatestFiniteMagnitude) }
+    }
+
+    /// El aviso bajo el importe, o nil si el abono cabe.
+    private var abonoWarning: String? {
+        guard kind == .debts, !linkedDebts.isEmpty else { return nil }
+        let value = abs(Self.parseAmount(amountText) ?? 0)
+        guard value > 0, linkedHeadroom.isFinite, value - linkedHeadroom > 0.5 else { return nil }
+        return "El abono supera lo que queda por pagar: \(Format.cop(linkedHeadroom))."
+    }
     /// Cuál selector (categoría o tipo) está abierto como hoja.
     @State private var activePicker: PickerField?
 
@@ -88,7 +113,15 @@ struct EditEntryView: View {
                     },
                     selected: kind.rawValue,
                     theme: theme
-                ) { kind = EntryKind(rawValue: $0) ?? kind }
+                ) { picked in
+                    kind = EntryKind(rawValue: picked) ?? kind
+                    // Un movimiento de deudas es de la categoría Debt salvo
+                    // excepción: se elige sola y queda lista para cambiarla.
+                    // Es el nombre del catálogo, no la etiqueta traducida.
+                    if kind == .debts, categories.contains(Self.debtCategory) {
+                        category = Self.debtCategory
+                    }
+                }
             }
         }
     }
@@ -177,7 +210,7 @@ struct EditEntryView: View {
             if kind == .debts {
                 field("¿Es un abono a una deuda?") {
                     VStack(alignment: .leading, spacing: 8) {
-                        if debts.isEmpty {
+                        if payableDebts.isEmpty {
                             Text("No hay deudas activas para vincular.")
                                 .font(.forum(15))
                                 .foregroundStyle(theme.muted)
@@ -189,7 +222,17 @@ struct EditEntryView: View {
                             Text("Marca las deudas a las que aplica este abono. Con una o más, el movimiento queda vinculado.")
                                 .font(.forum(13))
                                 .foregroundStyle(theme.muted)
-                            ForEach(debts) { debt in
+                            if linkedDebts.count > 1, linkedHeadroom.isFinite {
+                                Text("Entre las marcadas quedan \(Format.cop(linkedHeadroom)) por pagar.")
+                                    .font(.forum(13))
+                                    .foregroundStyle(theme.muted)
+                            }
+                            if let abonoWarning {
+                                Text(abonoWarning)
+                                    .font(.forum(13))
+                                    .foregroundStyle(theme.negative)
+                            }
+                            ForEach(payableDebts) { debt in
                                 Button {
                                     if linkedDebts.contains(debt.id) {
                                         linkedDebts.remove(debt.id)
@@ -207,7 +250,17 @@ struct EditEntryView: View {
                                             .font(.forum(16))
                                             .foregroundStyle(theme.heading)
                                             .lineLimit(1)
-                                        Spacer()
+                                        Spacer(minLength: 8)
+                                        // Lo que se debe, como en el selector
+                                        // de la web: sin esto se abona a
+                                        // ciegas y solo avisa el aviso.
+                                        if let balance = debt.remainingBalance {
+                                            Text(Format.copNoCode(balance))
+                                                .font(.forum(14))
+                                                .foregroundStyle(theme.muted)
+                                                .lineLimit(1)
+                                                .minimumScaleFactor(0.8)
+                                        }
                                     }
                                     .padding(.horizontal, 14)
                                     .frame(minHeight: 44)
@@ -256,7 +309,7 @@ struct EditEntryView: View {
                         )
                 }
                 .buttonStyle(.plain)
-                .disabled(!hasChanges)
+                .disabled(!hasChanges || abonoWarning != nil)
                 .opacity(hasChanges ? 1 : 0.45)
             }
             .padding(.top, 4)

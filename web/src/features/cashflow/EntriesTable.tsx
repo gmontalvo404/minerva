@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createEntry, deleteEntry, reorderEntry, updateEntry } from "../../lib/api";
 import type { DebtDetail } from "../../lib/api";
-import { getCategoryLabel } from "../../lib/categories";
+import { DEBT_CATEGORY, getCategoryLabel } from "../../lib/categories";
 import type { CategoryOption } from "../../lib/categories";
 import { formatCop, formatUsd } from "../../lib/format";
 import type { Language } from "../../lib/i18n";
@@ -44,6 +44,24 @@ const ActionsIcon = () => (
   >
     <path d="M9.67 4.14a2.34 2.34 0 0 1 4.66 0 2.34 2.34 0 0 0 3.32 1.91 2.34 2.34 0 0 1 2.33 4.03 2.34 2.34 0 0 0 0 3.84 2.34 2.34 0 0 1-2.33 4.03 2.34 2.34 0 0 0-3.32 1.91 2.34 2.34 0 0 1-4.66 0 2.34 2.34 0 0 0-3.32-1.91 2.34 2.34 0 0 1-2.33-4.03 2.34 2.34 0 0 0 0-3.84 2.34 2.34 0 0 1 2.33-4.03 2.34 2.34 0 0 0 3.32-1.91Z" />
     <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+/** The padlock on a movement a debt writes: it says "locked", not "automatic",
+ *  which is what the reader actually needs to know before trying to type. */
+const LockIcon = () => (
+  <svg
+    className="entry-auto-badge__icon"
+    aria-hidden="true"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <rect x="4" y="10" width="16" height="11" rx="2.5" />
+    <path d="M8 10V7a4 4 0 0 1 8 0v3" />
   </svg>
 );
 
@@ -270,8 +288,13 @@ export function EntriesTable({
                 <td className="entry-cell entry-cell--description">
                   <div className="entry-description-shell">
                     {isAuto ? (
-                      <span className="entry-auto-badge" title={lockedTitle}>
-                        {t("entry_auto_badge")}
+                      <span
+                        className="entry-auto-badge"
+                        role="img"
+                        aria-label={lockedTitle}
+                        title={lockedTitle}
+                      >
+                        <LockIcon />
                       </span>
                     ) : null}
                     <input
@@ -316,7 +339,16 @@ export function EntriesTable({
                         swatch: TYPE_META[option].color,
                       }))}
                       value={type}
-                      onChange={(next) => void save(entry, { target_type: next })}
+                      onChange={(next) =>
+                        void save(
+                          entry,
+                          // Pasar a deudas arrastra la categoría, igual que en
+                          // el diálogo de crear.
+                          next === "debts"
+                            ? { target_type: next, category: DEBT_CATEGORY }
+                            : { target_type: next },
+                        )
+                      }
                     />
                   </div>
                 </td>

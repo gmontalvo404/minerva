@@ -566,7 +566,7 @@ export function CashFlowPage({ dataset, language, onSidebar }: CashFlowPageProps
             />
           </KpiGrid>
 
-          <div className="chart-grid">
+          <div className="chart-grid chart-grid--monthly">
             <CardPanel eyebrow={t("monthly_budget_eyebrow")} title={t("monthly_budget_title")}>
               <DataTable
                 columns={summaryColumns}
