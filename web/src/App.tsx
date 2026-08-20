@@ -282,6 +282,7 @@ export function App() {
                 <span className="field__label">{t("module_label")}</span>
                 <Select
                   label={t("module_label")}
+                  menuVariant="pretty-select-menu--sidebar"
                   options={FINANCE_MODULES.map((module) => ({
                     value: module,
                     label: moduleLabels[module],

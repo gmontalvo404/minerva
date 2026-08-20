@@ -75,6 +75,11 @@
      the header switch has always rendered; the sidebar buttons and the inputs
      of the entry tables read it from here so the three cannot drift apart. */
   --control-height: 40px;
+  /* La caja que envuelve a un control: 50 = los 40 del botón más 5 de relleno
+     arriba y abajo. La comparten el interruptor del header y el desplegable
+     del sidebar, que son la misma pieza y tienen que medir lo mismo. */
+  --control-box-height: 50px;
+  --control-box-padding: 5px;
   /* El tipo de todo control: switch del header, botones del sidebar y los
      desplegables. Estaba suelto en cada regla, y por eso los desplegables se
      quedaron en 16px mientras los botones bajaban a 13. */

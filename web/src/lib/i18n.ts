@@ -170,6 +170,7 @@ const es: Dictionary = {
   create_entry_submit: "Agregar",
   create_entry_cancel: "Cancelar",
   create_entry_paid_hint: "",
+  /* Ya no se pinta: los botones muestran "+" y esto los nombra. */
   add_income_button: "Agregar ingreso",
   create_income_eyebrow: "Nuevo ingreso",
   create_income_title: "Agregar ingreso",

@@ -14,7 +14,7 @@ import { DebtDetailDialog } from "./DebtDetailDialog";
 import { DebtLinkDialog } from "./DebtLinkDialog";
 import { CardPanel, DataTable, EmptyState, KpiCard, KpiGrid, MonthNav, Panel } from "../../ui";
 import type { Column } from "../../ui";
-import { debtName, debtTermParts, debtTotals } from "./calc";
+import { debtTermParts, debtTotals } from "./calc";
 import type { Debt } from "./calc";
 
 type DebtView = "active" | "canceled";
@@ -160,7 +160,7 @@ export function DebtsPage({ dataset, language, onSidebar }: DebtsPageProps) {
     () =>
       raw.map((item) => ({
         id: item.id,
-        name: debtName(item, language),
+        name: item.name,
         capital: item.capital,
         financed: item.financed_capital,
         annualRate: item.annual_interest_rate,
@@ -192,7 +192,7 @@ export function DebtsPage({ dataset, language, onSidebar }: DebtsPageProps) {
           date: row.date,
         })),
       })),
-    [raw, language],
+    [raw],
   );
 
   const visible = debts.filter((debt) =>
@@ -376,6 +376,8 @@ export function DebtsPage({ dataset, language, onSidebar }: DebtsPageProps) {
             type="button"
             className="button button--compact button--entry-add"
             onClick={() => setCreating(true)}
+            title={t("create_debt_title")}
+            aria-label={t("create_debt_title")}
           >
             {t("add_debt_button")}
           </button>
@@ -420,7 +422,7 @@ export function DebtsPage({ dataset, language, onSidebar }: DebtsPageProps) {
 
       <DebtDetailDialog
         debt={rawDetail}
-        name={rawDetail ? debtName(rawDetail, language) : ""}
+        name={rawDetail?.name ?? ""}
         path={debtsPath(dataset)}
         usdCop={usdCop}
         onClose={() => setOpenDebt(null)}

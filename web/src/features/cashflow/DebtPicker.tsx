@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import type { DebtDetail } from "../../lib/api";
 import { formatCopNoCode } from "../../lib/format";
 import type { Language } from "../../lib/i18n";
-import { debtName } from "../debts/calc";
 
 export interface DebtPickerProps {
   debts: DebtDetail[];
@@ -70,7 +69,7 @@ export function DebtPicker({
                 checked={selected.includes(debt.id)}
                 onChange={(event) => onToggle(debt.id, event.target.checked)}
               />
-              <span className="create-entry-debt-option__name">{debtName(debt, language)}</span>
+              <span className="create-entry-debt-option__name">{debt.name}</span>
               <span className="create-entry-debt-option__meta">
                 {formatCopNoCode(debt.remaining_balance, language)}
               </span>

@@ -189,7 +189,7 @@ export function CashFlowPage({ dataset, language, onSidebar }: CashFlowPageProps
             <span className="field__label">{t("year_label")}</span>
             <Select
               label={t("year_label")}
-              menuVariant="pretty-select-menu--year"
+              menuVariant="pretty-select-menu--year pretty-select-menu--sidebar"
               options={years.map((value) => ({ value, label: value }))}
               value={year}
               onChange={setYear}
@@ -568,8 +568,10 @@ export function CashFlowPage({ dataset, language, onSidebar }: CashFlowPageProps
                 type="button"
                 className="button button--compact button--entry-add"
                 onClick={() => setAddIncomeOpen(true)}
+                title={t("create_income_title")}
+                aria-label={t("create_income_title")}
               >
-                {t("add_income_button")}
+                +
               </button>
             }
           >
@@ -600,6 +602,8 @@ export function CashFlowPage({ dataset, language, onSidebar }: CashFlowPageProps
                 type="button"
                 className="button button--compact button--entry-add"
                 onClick={() => setAddEntryOpen(true)}
+                title={t("create_entry_title")}
+                aria-label={t("create_entry_title")}
               >
                 {t("add_entry_button")}
               </button>
