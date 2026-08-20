@@ -376,7 +376,7 @@ export function AddIncomeDialog({
       }
     >
       <div className="movement-form__grid">
-        <label className="field">
+        <label className="field movement-form__full">
           <span className="field__label">{t("monthly_entries_description")}</span>
           <input
             className="entry-input"
@@ -387,9 +387,12 @@ export function AddIncomeDialog({
           />
         </label>
 
-        {numberField(t("monthly_entries_usd"), amountUsd, typeUsd)}
-        {numberField(t("monthly_income_fx"), usdCop, typeRate)}
-        {numberField(t("monthly_entries_cop"), amountCop, typeCop)}
+        {/* Pesos primero: es la moneda en la que se lleva la cuenta. */}
+        <div className="movement-form__amounts">
+          {numberField(t("monthly_entries_cop"), amountCop, typeCop)}
+          {numberField(t("monthly_entries_usd"), amountUsd, typeUsd)}
+          {numberField(t("monthly_income_fx"), usdCop, typeRate)}
+        </div>
         <p className="field__hint movement-form__full">{t("income_fx_hint")}</p>
 
         <label className="field movement-form__active">

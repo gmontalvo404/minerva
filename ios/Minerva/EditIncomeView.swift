@@ -61,13 +61,14 @@ struct EditIncomeView: View {
                             .frame(minHeight: 46)
                             .background(shell)
                     }
+                    // Pesos primero: es la moneda en la que se lleva la cuenta.
+                    money("COP", text: $amountCop, key: "amount_cop")
                     money("USD", text: $amountUsd, key: "amount_usd")
                     money("FX", text: $usdCop, key: "usd_cop")
                     Text("Cuántos pesos vale un dólar. Escribe uno de los dos montos y el otro se calcula.")
                         .font(.forum(13))
                         .foregroundStyle(theme.muted)
                         .fixedSize(horizontal: false, vertical: true)
-                    money("COP", text: $amountCop, key: "amount_cop")
                     if let problema {
                         Text(problema)
                             .font(.forum(13))
