@@ -40,6 +40,8 @@ struct MonthDetailView: View {
     /// Lo que salió mal al encolar un ingreso. Rendirse sin decir nada es lo
     /// que hacía que "agregar" pareciera no hacer nada.
     @State private var incomeProblem: String?
+    /// El ingreso en vuelo que se está reabriendo para cambiarlo.
+    @State private var editingGhost: Outbox.PendingIncome?
 
     /// Dónde escribir un ingreso de este mes. Lo dice el snapshot; si es uno
     /// anterior a que lo exportara, se toma de un ingreso que ya exista, y si
@@ -103,6 +105,25 @@ struct MonthDetailView: View {
                 } else {
                     Outbox.shared.queueUpdateIncome(fields, income: income, year: year, syncFrom: syncFrom)
                 }
+            }
+        }
+        .sheet(item: $editingGhost) { fantasma in
+            // Vuelve a abrirse como alta, con lo encolado ya escrito: lo que
+            // se guarda reemplaza el comando anterior, no lo compara.
+            EditIncomeView(
+                income: nil,
+                prefill: Income(
+                    description: fantasma.description, amountUsd: fantasma.amountUsd,
+                    usdCop: fantasma.usdCop, amountCop: fantasma.amountCop,
+                    received: fantasma.received, sourcePath: nil, sourceIndex: nil,
+                    monthIndex: month.index
+                ),
+                monthUsdCop: month.usdCop
+            ) { campos, _ in
+                incomeProblem = Outbox.shared.replacePendingIncome(
+                    fantasma.id, fields: campos, path: incomesPath,
+                    monthIndex: month.index, year: year, existing: month.incomes
+                ).problem
             }
         }
         .sheet(isPresented: $creatingIncome) {
@@ -438,30 +459,73 @@ struct MonthDetailView: View {
     /// El switch de pagado, separado del indicador: uno informa la
     /// sincronización, el otro cambia el estado. Enseña el valor pedido
     /// mientras el comando viaja.
-    /// Un ingreso encolado que aún no ha vuelto: se ve dónde va a caer, en
-    /// reloj y apagado, hasta que el snapshot lo traiga de verdad.
+    /// Un ingreso encolado que aún no ha vuelto del Mac. Se comporta como
+    /// una fila normal: se marca recibido, se abre para editar y se borra.
+    /// Mientras no salga del buzón todo eso es local — cambiarlo es rehacer
+    /// la intención, y borrarlo es retirarla; el Mac nunca llegó a saberlo.
     private func incomeGhost(_ fantasma: Outbox.PendingIncome) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "clock")
-                .font(.system(size: 13))
-                .foregroundStyle(theme.muted)
-                .frame(width: 32)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(fantasma.description.isEmpty ? "Ingreso" : fantasma.description)
+            Image(systemName: "clock.fill")
+                .font(.caption)
+                .foregroundStyle(theme.accent)
+            ghostReceivedSwitch(fantasma)
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(fantasma.description.isEmpty ? "Ingreso" : fantasma.description)
+                        .font(.forum(17))
+                        .foregroundStyle(theme.text)
+                        .lineLimit(1)
+                    if fantasma.amountUsd > 0 {
+                        Text(Format.usd(fantasma.amountUsd) + " · tasa " + Format.fx(fantasma.usdCop))
+                            .font(.forum(13))
+                            .foregroundStyle(theme.muted)
+                    }
+                }
+                Spacer(minLength: 8)
+                Text(Format.copNoCode(fantasma.amountCop))
                     .font(.forum(17))
-                    .foregroundStyle(theme.text)
+                    .foregroundStyle(theme.heading)
                     .lineLimit(1)
-                Text(fantasma.received ? "Enviándose · recibido" : "Enviándose")
-                    .font(.forum(13))
-                    .foregroundStyle(theme.muted)
             }
-            Spacer(minLength: 8)
-            Text(Format.copNoCode(fantasma.amountCop))
-                .font(.forum(17))
-                .foregroundStyle(theme.heading)
-                .lineLimit(1)
+            .contentShape(Rectangle())
+            .onTapGesture { editingGhost = fantasma }
         }
-        .opacity(0.55)
+        .contextMenu {
+            Button("Editar") { editingGhost = fantasma }
+            Button("Quitar", role: .destructive) {
+                Outbox.shared.cancelPendingIncome(fantasma.id)
+            }
+        }
+    }
+
+    /// Reloj mientras el cambio viaja, visto bueno cuando ya está: el mismo
+    /// indicador que llevan los movimientos, para que las dos listas se lean
+    /// igual y el fantasma alinee con las filas de verdad.
+    private func incomeSyncBadge(for income: Income) -> some View {
+        let esperando = outbox.desiredReceived(for: income) != nil
+            || outbox.incomeIsDeleting(income)
+        return Image(systemName: esperando ? "clock.fill" : "checkmark.circle.fill")
+            .font(.caption)
+            .foregroundStyle(esperando ? theme.accent : theme.positive)
+    }
+
+    /// El recibido de un ingreso en vuelo: cambia la intención encolada.
+    private func ghostReceivedSwitch(_ fantasma: Outbox.PendingIncome) -> some View {
+        Toggle("", isOn: Binding(
+            get: { fantasma.received },
+            set: { quiere in
+                var campos = fantasma.fields
+                campos["received"] = .flag(quiere)
+                incomeProblem = Outbox.shared.replacePendingIncome(
+                    fantasma.id, fields: campos, path: incomesPath,
+                    monthIndex: month.index, year: year, existing: month.incomes
+                ).problem
+            }
+        ))
+        .labelsHidden()
+        .tint(theme.accent)
+        .scaleEffect(0.58)
+        .frame(width: 32)
     }
 
     /// El recibido de un ingreso: mismo gesto y mismo optimismo que el pagado
@@ -661,34 +725,35 @@ struct MonthDetailView: View {
                     .foregroundStyle(theme.negative)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            ForEach(outbox.pendingIncomes(year: year, monthIndex: month.index)) { fantasma in
-                incomeGhost(fantasma)
-            }
             ForEach(month.incomes) { income in
                 HStack(spacing: 10) {
+                    incomeSyncBadge(for: income)
+                    // El interruptor va FUERA del área que abre el editor: con
+                    // el toque puesto en toda la fila, la fila se lo quedaba y
+                    // marcar recibido abría el modal en vez de marcar.
                     receivedSwitch(for: income)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(income.description ?? "—")
-                            .font(.forum(17))
-                            .foregroundStyle(theme.text)
-                            .lineLimit(1)
-                        if let usd = income.amountUsd, usd > 0 {
-                            Text(Format.usd(usd) + " · tasa " + Format.fx(income.usdCop ?? 0))
-                                .font(.forum(13))
-                                .foregroundStyle(theme.muted)
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(income.description ?? "—")
+                                .font(.forum(17))
+                                .foregroundStyle(theme.text)
+                                .lineLimit(1)
+                            if let usd = income.amountUsd, usd > 0 {
+                                Text(Format.usd(usd) + " · tasa " + Format.fx(income.usdCop ?? 0))
+                                    .font(.forum(13))
+                                    .foregroundStyle(theme.muted)
+                            }
                         }
+                        Spacer(minLength: 8)
+                        Text(Format.copNoCode(income.amountCop ?? 0))
+                            .font(.forum(17))
+                            .foregroundStyle(theme.heading)
+                            .lineLimit(1)
                     }
-                    Spacer(minLength: 8)
-                    Text(Format.copNoCode(income.amountCop ?? 0))
-                        .font(.forum(17))
-                        .foregroundStyle(theme.heading)
-                        .lineLimit(1)
+                    .contentShape(Rectangle())
+                    .onTapGesture { if canEdit { editingIncome = income } }
                 }
                 .opacity(outbox.incomeIsDeleting(income) ? 0.45 : 1)
-                // El interruptor se queda con su toque; el resto de la fila
-                // abre el editor, como en los movimientos.
-                .contentShape(Rectangle())
-                .onTapGesture { if canEdit { editingIncome = income } }
                 .contextMenu {
                     if canEdit {
                         Button("Editar") { editingIncome = income }
@@ -701,6 +766,11 @@ struct MonthDetailView: View {
                         }
                     }
                 }
+            }
+            // Al final: es donde el servidor lo va a poner, así que la lista no
+            // se reordena sola cuando el de verdad llegue.
+            ForEach(outbox.pendingIncomes(year: year, monthIndex: month.index)) { fantasma in
+                incomeGhost(fantasma)
             }
         }
         .card(theme)
