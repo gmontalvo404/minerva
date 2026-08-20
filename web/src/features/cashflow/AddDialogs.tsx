@@ -278,16 +278,34 @@ export function AddIncomeDialog({
    * debajo de medio centavo es cero.
    */
   const round2 = (value: number) => (Math.abs(value) < 0.005 ? 0 : Math.round(value * 100) / 100);
-  const show = (value: number) => (Number.isFinite(value) ? String(round2(value)) : "");
 
-  const typeUsd = (raw: string) => {
+  /**
+   * Lo calculado, o vacío si no llega a un centavo. Escribir "0" dejaba un
+   * cero plantado en el campo, y lo siguiente que tecleabas se le pegaba
+   * detrás: 5 pesos daban 0 dólares, y al escribir 1 encima quedaba "01".
+   */
+  const show = (value: number) => {
+    if (!Number.isFinite(value)) return "";
+    const rounded = round2(value);
+    return rounded === 0 ? "" : String(rounded);
+  };
+
+  /**
+   * Un número no empieza por cero. Se quitan los ceros de delante solo cuando
+   * les sigue un dígito, para no romper el "0" de "0,5" mientras se escribe.
+   */
+  const noLeadingZero = (raw: string) => raw.replace(/^(-?)0+(?=\d)/, "$1");
+
+  const typeUsd = (input: string) => {
+    const raw = noLeadingZero(input);
     setAmountUsd(raw);
     const rate = Number(usdCop);
     if (!raw.trim()) return setAmountCop("");
     if (rate > 0 && Number.isFinite(Number(raw))) setAmountCop(show(Number(raw) * rate));
   };
 
-  const typeCop = (raw: string) => {
+  const typeCop = (input: string) => {
+    const raw = noLeadingZero(input);
     setAmountCop(raw);
     const rate = Number(usdCop);
     if (!raw.trim()) return setAmountUsd("");
@@ -295,7 +313,8 @@ export function AddIncomeDialog({
   };
 
   /** Cambiar la tasa rehace los pesos, que es el lado que depende de ella. */
-  const typeRate = (raw: string) => {
+  const typeRate = (input: string) => {
+    const raw = noLeadingZero(input);
     setUsdCop(raw);
     const rate = Number(raw);
     if (rate > 0 && amountUsd.trim() && Number.isFinite(Number(amountUsd))) {
