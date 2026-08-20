@@ -92,7 +92,7 @@ struct MonthDetailView: View {
             }
         }
         .sheet(isPresented: $creatingIncome) {
-            EditIncomeView(income: nil) { fields, _ in
+            EditIncomeView(income: nil, monthUsdCop: month.usdCop) { fields, _ in
                 if let demo {
                     demo.saveIncome(fields, nil)
                 } else if let path = month.incomes.first?.sourcePath {

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { createEntry, createIncome } from "../../lib/api";
+import { useEffect, useState } from "react";
+import { createEntry, createIncome, getUsdCopRate } from "../../lib/api";
 import type { DebtDetail } from "../../lib/api";
 import type { CategoryOption } from "../../lib/categories";
 import type { Language } from "../../lib/i18n";
@@ -224,6 +224,8 @@ export interface AddIncomeDialogProps {
   onClose: () => void;
   path: string;
   monthIndex: number;
+  /** La tasa del mes, de arranque si la del día no llega. */
+  monthUsdCop: number;
   t: Translate;
   onCreated: () => Promise<void> | void;
   onError: (message: string) => void;
@@ -235,6 +237,7 @@ export function AddIncomeDialog({
   onClose,
   path,
   monthIndex,
+  monthUsdCop,
   t,
   onCreated,
   onError,
@@ -245,7 +248,40 @@ export function AddIncomeDialog({
   const [amountCop, setAmountCop] = useState("");
   const [received, setReceived] = useState(true);
 
+  /**
+   * La tasa se ofrece hecha: la del día si el servidor la tiene, si no la del
+   * mes. Dejarla vacía hacía que el formulario mandara `usd_cop: 0`, y con eso
+   * el servidor calculaba el otro monto contra cero — escribías 500 dólares y
+   * te quedaba un ingreso de $0.
+   */
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    setUsdCop(monthUsdCop > 0 ? String(monthUsdCop) : "");
+    void getUsdCopRate()
+      .then((live) => {
+        // Solo si sigue sin tocar: quien ya escribió una tasa manda.
+        if (alive && live.rate > 0) setUsdCop((current) => (current === String(monthUsdCop) || !current ? String(live.rate) : current));
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [open, monthUsdCop]);
+
+  /** Como validateCreateIncomeForm del original: un monto y una tasa usable. */
+  const problem = (): string | null => {
+    if (!amountUsd.trim() && !amountCop.trim()) return t("create_income_amount_error");
+    if (!(Number(usdCop) > 0)) return t("create_income_fx_error");
+    return null;
+  };
+
   const submit = async () => {
+    const wrong = problem();
+    if (wrong) {
+      onError(wrong);
+      return;
+    }
     try {
       // An amount left blank is not sent: the server works it out from the
       // other one and the rate. Sending a 0 would store a zero instead.
