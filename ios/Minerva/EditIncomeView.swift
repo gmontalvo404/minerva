@@ -7,6 +7,10 @@ import SwiftUI
 struct EditIncomeView: View {
     /// nil = crear.
     let income: Income?
+    /// La tasa del mes: con qué se estrena el campo al crear. Dejarla en cero
+    /// hacía que el servidor calculara el otro monto contra cero — escribías
+    /// 500 dólares y quedaba un ingreso de $0.
+    let monthUsdCop: Double
     let onSave: (_ fields: [String: Outbox.PendingValue], _ syncFrom: String?) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -23,12 +27,17 @@ struct EditIncomeView: View {
     private var theme: Theme { .of(scheme) }
     private var isNew: Bool { income == nil }
 
-    init(income: Income?, onSave: @escaping (_ fields: [String: Outbox.PendingValue], _ syncFrom: String?) -> Void) {
+    init(
+        income: Income?,
+        monthUsdCop: Double = 0,
+        onSave: @escaping (_ fields: [String: Outbox.PendingValue], _ syncFrom: String?) -> Void
+    ) {
         self.income = income
+        self.monthUsdCop = monthUsdCop
         self.onSave = onSave
         _description = State(initialValue: income?.description ?? "")
         _amountUsd = State(initialValue: Self.plain(income?.amountUsd))
-        _usdCop = State(initialValue: Self.plain(income?.usdCop))
+        _usdCop = State(initialValue: Self.plain(income?.usdCop ?? (income == nil ? monthUsdCop : nil)))
         _amountCop = State(initialValue: Self.plain(income?.amountCop))
         _received = State(initialValue: income?.received ?? false)
     }
@@ -50,8 +59,17 @@ struct EditIncomeView: View {
                             .background(shell)
                     }
                     money("USD", text: $amountUsd, key: "amount_usd")
-                    money("Tasa", text: $usdCop, key: "usd_cop")
+                    money("Tasa USD → COP", text: $usdCop, key: "usd_cop")
+                    Text("Cuántos pesos vale un dólar. Escribe uno de los dos montos y el otro sale de aquí.")
+                        .font(.forum(13))
+                        .foregroundStyle(theme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                     money("COP", text: $amountCop, key: "amount_cop")
+                    if let problema {
+                        Text(problema)
+                            .font(.forum(13))
+                            .foregroundStyle(theme.negative)
+                    }
 
                     field("Recibido") {
                         Toggle(isOn: $received) {
@@ -84,8 +102,8 @@ struct EditIncomeView: View {
                                 ),
                                 in: RoundedRectangle(cornerRadius: 16, style: .continuous)
                             )
-                            .disabled(!hasChanges)
-                            .opacity(hasChanges ? 1 : 0.5)
+                            .disabled(!hasChanges || problema != nil)
+                            .opacity(hasChanges && problema == nil ? 1 : 0.5)
                     }
                     .buttonStyle(.plain)
                     .padding(.top, 4)
@@ -123,6 +141,17 @@ struct EditIncomeView: View {
                 .background(shell)
                 .onChange(of: text.wrappedValue) { _ in touched = key }
         }
+    }
+
+    /// Lo mismo que validaba el formulario original: un monto y una tasa
+    /// usable. Sin la tasa, el otro monto se calcularía contra cero.
+    private var problema: String? {
+        guard isNew else { return nil }
+        if Self.parse(amountUsd) == nil && Self.parse(amountCop) == nil {
+            return "Escribe un valor en USD o en COP."
+        }
+        if !((Self.parse(usdCop) ?? 0) > 0) { return "Escribe una tasa válida." }
+        return nil
     }
 
     private var hasChanges: Bool {

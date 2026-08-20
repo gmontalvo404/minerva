@@ -622,6 +622,7 @@ export function CashFlowPage({ dataset, language, onSidebar }: CashFlowPageProps
             onClose={() => setAddIncomeOpen(false)}
             path={`${cashFlowRoot(dataset)}/${summary.year}/incomes/incomes.json`}
             monthIndex={month.index}
+            monthUsdCop={month.usdCop ?? 0}
             t={t}
             onCreated={reload}
             onError={setStatus}
