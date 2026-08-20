@@ -194,7 +194,11 @@ final class Outbox: ObservableObject {
         let description: String
         let amountCop: Double
         let amountUsd: Double
+        let usdCop: Double
         let received: Bool
+        /// Los campos tal cual se encolaron, para poder rehacer el comando sin
+        /// reconstruirlos de vuelta desde los números ya redondeados.
+        let fields: [String: PendingValue]
     }
 
     func pendingIncomes(year: String, monthIndex: Int) -> [PendingIncome] {
@@ -210,9 +214,36 @@ final class Outbox: ObservableObject {
                     description: wish.text("description") ?? "—",
                     amountCop: wish.number("amount_cop") ?? 0,
                     amountUsd: wish.number("amount_usd") ?? 0,
-                    received: wish.flag("received") ?? false
+                    usdCop: wish.number("usd_cop") ?? 0,
+                    received: wish.flag("received") ?? false,
+                    fields: wish.values
                 )
             }
+    }
+
+    /// Retira un ingreso que todavía no ha salido: el archivo del buzón se
+    /// borra y el fantasma desaparece. Nada que deshacer en el Mac, porque
+    /// nunca llegó a saberlo.
+    func cancelPendingIncome(_ id: String) {
+        guard let wish = pending[id] else { return }
+        if let file = wish.fileName { SnapshotStore.removeCommand(named: file) }
+        pending.removeValue(forKey: id)
+        persist()
+    }
+
+    /// Cambia un ingreso en vuelo: se retira el comando anterior y se encola
+    /// el nuevo. Editar algo que aún no existe es reescribir la intención.
+    @discardableResult
+    func replacePendingIncome(
+        _ id: String,
+        fields: [String: PendingValue],
+        path: String,
+        monthIndex: Int,
+        year: String,
+        existing: [Income]
+    ) -> CommandResult {
+        cancelPendingIncome(id)
+        return queueCreateIncome(fields, path: path, monthIndex: monthIndex, year: year, existing: existing)
     }
 
     /// El circulito de pagado: un caso particular de editar.

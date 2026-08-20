@@ -38,17 +38,22 @@ struct EditIncomeView: View {
 
     init(
         income: Income?,
+        /// Valores de arranque sin dejar de ser un alta: es lo que se usa al
+        /// reabrir un ingreso que todavía está en el buzón, donde editar es
+        /// rehacer la intención entera y no calcular diferencias.
+        prefill: Income? = nil,
         monthUsdCop: Double = 0,
         onSave: @escaping (_ fields: [String: Outbox.PendingValue], _ syncFrom: String?) -> Void
     ) {
         self.income = income
         self.monthUsdCop = monthUsdCop
         self.onSave = onSave
-        _description = State(initialValue: income?.description ?? "")
-        _amountUsd = State(initialValue: Self.plain(income?.amountUsd))
-        _usdCop = State(initialValue: Self.plain(income?.usdCop ?? (income == nil ? monthUsdCop : nil)))
-        _amountCop = State(initialValue: Self.plain(income?.amountCop))
-        _received = State(initialValue: income?.received ?? false)
+        let base = income ?? prefill
+        _description = State(initialValue: base?.description ?? "")
+        _amountUsd = State(initialValue: Self.plain(base?.amountUsd))
+        _usdCop = State(initialValue: Self.plain(base?.usdCop ?? (base == nil ? monthUsdCop : nil)))
+        _amountCop = State(initialValue: Self.plain(base?.amountCop))
+        _received = State(initialValue: base?.received ?? false)
     }
 
     var body: some View {
