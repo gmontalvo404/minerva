@@ -144,8 +144,17 @@ struct EditIncomeView: View {
                 .frame(minHeight: 46)
                 .background(shell)
                 .onChange(of: text.wrappedValue) { nuevo in
-                    touched = key
-                    sync(from: key, value: nuevo)
+                    // Un cero delante se cuela al teclear sobre un campo que
+                    // el cálculo había dejado en cero; se quita antes de nada.
+                    let limpio = Self.noLeadingZero(nuevo)
+                    if limpio != nuevo {
+                        text.wrappedValue = limpio
+                        return
+                    }
+                    // Solo cuenta como "tocado" lo que escribe una persona: el
+                    // otro campo también dispara esto al rellenarse solo.
+                    if !syncing { touched = key }
+                    sync(from: key, value: limpio)
                 }
         }
     }
@@ -174,12 +183,27 @@ struct EditIncomeView: View {
         }
     }
 
-    /// roundIncomeDisplayValue del original: dos decimales, y por debajo de
-    /// medio centavo es cero.
+    /// Lo calculado, o vacío si no llega a un centavo. Escribir "0" dejaba un
+    /// cero plantado en el campo y lo siguiente que tecleabas se le pegaba
+    /// detrás: 5 pesos daban 0 dólares, y al escribir 1 encima quedaba "01".
+    /// El redondeo sigue siendo el de roundIncomeDisplayValue.
     private static func show(_ value: Double) -> String {
         guard value.isFinite else { return "" }
         let r = abs(value) < 0.005 ? 0 : (value * 100).rounded() / 100
+        if r == 0 { return "" }
         return r == r.rounded() ? String(Int(r)) : String(r)
+    }
+
+    /// Un número no empieza por cero. Se quitan los de delante solo cuando les
+    /// sigue un dígito, para no romper el "0" de "0,5" mientras se escribe.
+    private static func noLeadingZero(_ text: String) -> String {
+        let negativo = text.hasPrefix("-")
+        var cuerpo = negativo ? String(text.dropFirst()) : text
+        while cuerpo.count > 1, cuerpo.hasPrefix("0"),
+              let segundo = cuerpo.dropFirst().first, segundo.isNumber {
+            cuerpo.removeFirst()
+        }
+        return negativo ? "-" + cuerpo : cuerpo
     }
 
     /// Lo mismo que validaba el formulario original: un monto y una tasa
