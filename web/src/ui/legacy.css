@@ -2142,6 +2142,16 @@ tbody tr[data-debt-row="true"].is-drop-after td {
   text-align: right;
 }
 
+/* En la tabla de ingresos los tres montos son el mismo dato en tres formas,
+   así que miden lo mismo. entry-cell--amount y --usd los comparten con la
+   tabla de gastos, donde COP es el campo editable y va más ancho. */
+.data-table--income-entries .entry-cell--amount,
+.data-table--income-entries .entry-cell--usd,
+.data-table--income-entries .entry-cell--fx {
+  width: 145px;
+  min-width: 110px;
+}
+
 .entry-cell--fx {
   min-width: 88px;
   text-align: right;
@@ -3439,6 +3449,16 @@ tbody tr[data-debt-row="true"].is-drop-after td {
   grid-column: 1 / -1;
 }
 
+/* Los tres montos de un ingreso son el mismo dato en tres formas, así que
+   ocupan lo mismo. En la rejilla de dos columnas del formulario quedaban
+   repartidos dos y uno, con el tercero suelto y de otro ancho. */
+.movement-form__amounts {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .movement-form__active {
   grid-column: 1 / -1;
 }
@@ -4188,6 +4208,10 @@ tbody tr[data-debt-row="true"].is-drop-after td {
 
   .card__note--detail {
     margin-top: 0;
+  }
+
+  .movement-form__amounts {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .movement-form__grid {

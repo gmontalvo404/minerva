@@ -137,9 +137,9 @@ export function IncomesTable({
             <th>{t("monthly_entries_move")}</th>
             <th>{t("monthly_income_received")}</th>
             <th>{t("monthly_entries_description")}</th>
+            <th>{t("monthly_entries_cop")}</th>
             <th>{t("monthly_entries_usd")}</th>
             <th>{t("monthly_income_fx")}</th>
-            <th>{t("monthly_entries_cop")}</th>
             <th>{t("monthly_entries_history")}</th>
           </tr>
         </thead>
@@ -229,16 +229,17 @@ export function IncomesTable({
                   </div>
                 </td>
 
+                {/* Pesos primero, igual que en el formulario. */}
+                <td className="entry-cell entry-cell--amount">
+                  {numberField(income, index, "amount_cop", Number(income.amount_cop) || 0)}
+                </td>
+
                 <td className="entry-cell entry-cell--usd">
                   {numberField(income, index, "amount_usd", Number(income.amount_usd) || 0)}
                 </td>
 
                 <td className="entry-cell entry-cell--fx">
                   {numberField(income, index, "usd_cop", Number(income.usd_cop) || 0)}
-                </td>
-
-                <td className="entry-cell entry-cell--amount">
-                  {numberField(income, index, "amount_cop", Number(income.amount_cop) || 0)}
                 </td>
 
                 <td className="entry-cell entry-cell--history">
