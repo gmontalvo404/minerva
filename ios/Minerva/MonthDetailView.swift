@@ -694,7 +694,10 @@ struct MonthDetailView: View {
                         Button("Editar") { editingIncome = income }
                         Button("Borrar", role: .destructive) {
                             if let demo { demo.deleteIncome(income) }
-                            else { Outbox.shared.queueDeleteIncome(income, year: year) }
+                            else {
+                                incomeProblem = Outbox.shared
+                                    .queueDeleteIncome(income, year: year).problem
+                            }
                         }
                     }
                 }
