@@ -25,7 +25,15 @@ async function readError(response: Response): Promise<string> {
 
 /** Reads a JSON file served from the data folders. */
 export async function getJson<T>(path: string, options: { fallback?: T } = {}): Promise<T> {
-  const response = await fetch(`/${path}`, { headers: { Accept: "application/json" } });
+  // no-store: estos son archivos de datos que cambian bajo los pies — otra
+  // pestaña, el teléfono por el buzón, el propio servidor. Servidos como
+  // estáticos, el navegador los da por buenos de su caché y la página se queda
+  // con la versión de hace un rato; el sello de /api/data/stamp avisaba del
+  // cambio y la relectura devolvía lo mismo de antes.
+  const response = await fetch(`/${path}`, {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
 
   if (!response.ok) {
     if (options.fallback !== undefined && response.status === 404) {
@@ -77,7 +85,10 @@ export async function getNutritionPlan<T>(
   path: string,
   fallback: T,
 ): Promise<{ document: T; hash: string | null }> {
-  const response = await fetch(`/${path}`, { headers: { Accept: "application/json" } });
+  const response = await fetch(`/${path}`, {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
   if (!response.ok) {
     if (response.status === 404) return { document: fallback, hash: null };
     throw new ApiError(await readError(response), response.status);
@@ -478,6 +489,18 @@ export const EMPTY_NUTRITION_COSTS: NutritionCosts = {
  */
 export async function settleDebt(path: string, debtId: string): Promise<void> {
   await post("/api/debts/settle", { path, debt_id: debtId });
+}
+
+/**
+ * El dado del plan: una comida al azar por franja, sin las excluidas. Con
+ * `dayIndex` tira un día; sin él, la semana entera.
+ *
+ * La cuenta la hace el servidor y no el navegador, por lo mismo que todas las
+ * demás: el teléfono no puede reimplementarla, y dos copias de la misma regla
+ * acaban dando resultados distintos.
+ */
+export async function randomizeNutrition(path: string, dayIndex?: number): Promise<void> {
+  await post("/api/nutrition/randomize", dayIndex === undefined ? { path } : { path, day_index: dayIndex });
 }
 
 export async function getShoppingList(planPath: string): Promise<NutritionCosts> {
