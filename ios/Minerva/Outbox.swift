@@ -224,45 +224,87 @@ final class Outbox: ObservableObject {
 
     /// Finalizar una deuda: el servidor escribe el abono que falta en el mes
     /// corriente. Viaja la intención — el saldo lo calcula quien lo sabe.
-    func queueSettleDebt(path: String, debtId: String) {
-        guard !path.isEmpty, !debtId.isEmpty else { return }
-        writePlanCommand([
+    @discardableResult
+    func queueSettleDebt(path: String, debtId: String) -> CommandResult {
+        guard !path.isEmpty, !debtId.isEmpty else { return .noPath }
+        return result(of: writePlanCommand([
             "id": UUID().uuidString,
             "action": "settle_debt",
             "path": path,
             "debt_id": debtId,
-        ], verb: "finalizar-deuda")
+        ], verb: "finalizar-deuda"))
     }
 
     /// El dado del plan alimentario. Con `dayIndex` tira un día; sin él, la
     /// semana entera. Viaja la intención, no el plan: el teléfono no lo tiene,
     /// y quien sabe qué comidas caben es el servidor.
-    func queueRandomizeNutrition(path: String, dayIndex: Int? = nil) {
-        guard !path.isEmpty else { return }
+    @discardableResult
+    func queueRandomizeNutrition(path: String, dayIndex: Int? = nil) -> CommandResult {
+        guard !path.isEmpty else { return .noPath }
         var payload: [String: Any] = [
             "id": UUID().uuidString,
             "action": "randomize_nutrition",
             "path": path,
         ]
         if let dayIndex { payload["day_index"] = dayIndex }
-        writePlanCommand(payload, verb: dayIndex == nil ? "randomizar-semana" : "randomizar-dia")
+        return result(of: writePlanCommand(payload, verb: dayIndex == nil ? "randomizar-semana" : "randomizar-dia"))
+    }
+
+    /// Qué pasó al intentar encolar. Antes esto se tragaba en silencio y la
+    /// pantalla decía que iba en camino aunque no hubiera salido nada.
+    enum CommandResult {
+        case queued
+        /// El snapshot no trae la ruta: servidor sin reiniciar desde que la
+        /// empezó a exportar.
+        case noPath
+        /// No se pudo escribir en la carpeta de iCloud, con el motivo tal como
+        /// lo dio el sistema — un mensaje genérico no deja diagnosticar nada.
+        case notWritten(String)
+
+        var problem: String? {
+            switch self {
+            case .queued: return nil
+            case .noPath:
+                return "El snapshot no trae la ruta del plan todavía. Arranca el servidor del Mac una vez para que la exporte."
+            case .notWritten(let reason):
+                return "No pude dejar el comando en iCloud: \(reason)"
+            }
+        }
     }
 
     /// Qué alimentos quedan fuera de la semana.
-    func queueNutritionExclusions(path: String, excluded: [String]) {
-        guard !path.isEmpty else { return }
-        writePlanCommand([
+    @discardableResult
+    func queueNutritionExclusions(path: String, excluded: [String]) -> CommandResult {
+        guard !path.isEmpty else { return .noPath }
+        return result(of: writePlanCommand([
             "id": UUID().uuidString,
             "action": "set_nutrition_exclusions",
             "path": path,
             "excluded": excluded,
-        ], verb: "excluir-alimentos")
+        ], verb: "excluir-alimentos"))
     }
 
     /// Los comandos del plan no se fusionan ni dejan fila "pendiente": no
     /// apuntan a un movimiento, y dos dados seguidos son dos tiradas.
-    @discardableResult
-    private func writePlanCommand(_ payload: [String: Any], verb: String) -> String? {
+    private func result(of written: Result<String, Error>) -> CommandResult {
+        switch written {
+        case .success: return .queued
+        case .failure(let error): return .notWritten(Self.explain(error))
+        }
+    }
+
+    /// El error en palabras: los casos que de verdad pasan tienen nombre, y el
+    /// resto sale crudo antes que esconderse.
+    private static func explain(_ error: Error) -> String {
+        switch error {
+        case SnapshotError.notConfigured: return "no hay carpeta de iCloud elegida (Ajustes)."
+        case SnapshotError.noAccess: return "la carpeta elegida ya no da permiso; vuelve a elegirla en Ajustes."
+        default: return String(describing: error)
+        }
+    }
+
+    /// El nombre del archivo si salió; el error del sistema si no.
+    private func writePlanCommand(_ payload: [String: Any], verb: String) -> Result<String, Error> {
         let device = UserDefaults.standard.string(forKey: "deviceName") ?? "iPhone"
         let stamp = Self.fileStamp.string(from: Date())
         var body = payload
@@ -271,10 +313,9 @@ final class Outbox: ObservableObject {
         let name = "\(stamp)_\(Self.slug(device))_\(verb)_\(UUID().uuidString.prefix(8)).json"
         do {
             try SnapshotStore.writeCommand(body, named: name)
-            return name
+            return .success(name)
         } catch {
-            // Sin acceso a la carpeta no hay optimismo que valga.
-            return nil
+            return .failure(error)
         }
     }
 
@@ -307,7 +348,7 @@ final class Outbox: ObservableObject {
             "description": income.description ?? "",
         ]
         if let syncFrom { payload["sync_from"] = syncFrom }
-        if let name = writePlanCommand(payload, verb: "editar-ingreso") {
+        if case .success(let name) = writePlanCommand(payload, verb: "editar-ingreso") {
             pending[key] = Pending(values: merged, queuedAt: Date(), fileName: name)
             persist()
         }
@@ -335,7 +376,7 @@ final class Outbox: ObservableObject {
         if let previousFile = pending[key]?.fileName {
             SnapshotStore.removeCommand(named: previousFile)
         }
-        if let name = writePlanCommand([
+        if case .success(let name) = writePlanCommand([
             "id": UUID().uuidString,
             "action": "delete_income",
             "path": path,

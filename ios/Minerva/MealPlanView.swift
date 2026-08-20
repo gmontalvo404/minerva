@@ -12,6 +12,13 @@ struct MealWeekScreen: View {
     /// avisa en vez de fingir que hizo algo.
     let live: Bool
     @State private var rolled: String?
+    @State private var failed = false
+    /// Tiradas en vuelo. Un dado tarda lo que tarde el Mac en aplicarlo y
+    /// iCloud en traer la semana nueva; volver a tirar mientras tanto encola
+    /// una segunda tirada sobre lo mismo, y la primera se pierde sin que se
+    /// vea. Se apagan hasta que llegue el snapshot.
+    @State private var rollingWeek = false
+    @State private var rollingDays: Set<Int> = []
     @Environment(\.colorScheme) private var scheme
 
     private var theme: Theme { .of(scheme) }
@@ -23,7 +30,8 @@ struct MealWeekScreen: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
                         Button {
-                            roll(path: plan.planPath, dayIndex: nil, note: "Randomizando la semana…")
+                            rollingWeek = true
+                            roll(path: store.nutritionPlanPath, dayIndex: nil, note: "Randomizando la semana…")
                         } label: {
                             Label("Randomizar semana", systemImage: "die.face.5")
                                 .font(.forum(16))
@@ -31,9 +39,9 @@ struct MealWeekScreen: View {
                                 .frame(minHeight: 44)
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(live ? theme.heading : theme.muted)
+                        .foregroundStyle(live && !rollingWeek ? theme.heading : theme.muted)
                         .background(inputWell)
-                        .disabled(!live)
+                        .disabled(!live || rollingWeek)
 
                         NavigationLink(value: RootView.Route.mealPlan(.exclusions)) {
                             Label("Excluir", systemImage: "xmark.circle")
@@ -48,14 +56,18 @@ struct MealWeekScreen: View {
                     if let rolled {
                         Text(rolled)
                             .font(.forum(13))
-                            .foregroundStyle(theme.muted)
+                            .foregroundStyle(failed ? theme.negative : theme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
                     } else if !live {
                         Text("El dado y las exclusiones necesitan la sesión real: el demo va empacado y nadie lo aplica.")
                             .font(.forum(13))
                             .foregroundStyle(theme.muted)
                             .fixedSize(horizontal: false, vertical: true)
-                    } else if !plan.excludedIngredients.isEmpty {
-                        Text("\(plan.excludedIngredients.count) alimento(s) fuera de la semana.")
+                    } else {
+                        // De cuándo es el plan que se está viendo. Sin esto, un
+                        // snapshot que iCloud aún no bajó se ve idéntico a uno
+                        // al día, y las dos apps parecen no coincidir.
+                        Text(planAge(plan))
                             .font(.forum(13))
                             .foregroundStyle(theme.muted)
                     }
@@ -73,15 +85,18 @@ struct MealWeekScreen: View {
                                 .font(.forum(15))
                                 .foregroundStyle(theme.muted)
                             if live {
+                                let waiting = rollingWeek || rollingDays.contains(index)
                                 Button {
-                                    roll(path: plan.planPath, dayIndex: index, note: "Randomizando \(day.day)…")
+                                    rollingDays.insert(index)
+                                    roll(path: store.nutritionPlanPath, dayIndex: index, note: "Randomizando \(day.day)…")
                                 } label: {
                                     Image(systemName: "die.face.5")
                                         .font(.system(size: 15))
-                                        .foregroundStyle(theme.accent)
+                                        .foregroundStyle(waiting ? theme.muted : theme.accent)
                                         .frame(width: 32, height: 32)
                                 }
                                 .buttonStyle(.plain)
+                                .disabled(waiting)
                                 .accessibilityLabel("Randomizar \(day.day)")
                             }
                         }
@@ -95,6 +110,25 @@ struct MealWeekScreen: View {
                 PlanEmpty(theme: theme)
             }
         }
+        // La semana nueva llegó: se acabó la espera.
+        .onChange(of: store.nutrition?.generatedAt) { _ in
+            rollingWeek = false
+            rollingDays.removeAll()
+            rolled = nil
+            failed = false
+        }
+    }
+
+    /// "Plan de hace 3 minutos · 2 alimentos fuera".
+    private func planAge(_ plan: NutritionSnapshot) -> String {
+        var parts: [String] = []
+        if let raw = plan.generatedAt, let date = RootView.isoParser.date(from: raw) {
+            parts.append("Plan " + date.formatted(.relative(presentation: .named).locale(Locale(identifier: "es"))))
+        }
+        if !plan.excludedIngredients.isEmpty {
+            parts.append("\(plan.excludedIngredients.count) alimento(s) fuera")
+        }
+        return parts.joined(separator: " · ")
     }
 
     private var inputWell: some View {
@@ -107,10 +141,17 @@ struct MealWeekScreen: View {
     }
 
     /// El comando se va al buzón; la semana nueva llega con el próximo
-    /// snapshot, así que aquí solo se avisa que salió.
+    /// snapshot. Si no salió, se dice — antes esto avisaba que iba en camino
+    /// pasara lo que pasara, y un fallo se veía igual que un éxito lento.
     private func roll(path: String, dayIndex: Int?, note: String) {
-        Outbox.shared.queueRandomizeNutrition(path: path, dayIndex: dayIndex)
-        rolled = note
+        let result = Outbox.shared.queueRandomizeNutrition(path: path, dayIndex: dayIndex)
+        rolled = result.problem ?? note
+        failed = result.problem != nil
+        if failed {
+            // No salió: nada que esperar, y el dado vuelve a estar disponible.
+            rollingWeek = false
+            rollingDays.removeAll()
+        }
     }
 }
 
@@ -121,6 +162,7 @@ struct ExclusionsScreen: View {
     let live: Bool
     @State private var excluded: Set<String> = []
     @State private var loaded = false
+    @State private var problem: String?
     @Environment(\.colorScheme) private var scheme
 
     private var theme: Theme { .of(scheme) }
@@ -139,6 +181,12 @@ struct ExclusionsScreen: View {
                             .font(.forum(13))
                             .foregroundStyle(theme.negative)
                     }
+                    if let problem {
+                        Text(problem)
+                            .font(.forum(13))
+                            .foregroundStyle(theme.negative)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .card(theme)
@@ -148,7 +196,7 @@ struct ExclusionsScreen: View {
                         Eyebrow(group.label, theme)
                         ForEach(group.items) { ingredient in
                             Button {
-                                toggle(ingredient.id, path: plan.planPath)
+                                toggle(ingredient.id, path: store.nutritionPlanPath)
                             } label: {
                                 HStack(spacing: 10) {
                                     Image(systemName: excluded.contains(ingredient.id)
@@ -186,13 +234,16 @@ struct ExclusionsScreen: View {
 
     private func toggle(_ id: String, path: String) {
         if excluded.contains(id) { excluded.remove(id) } else { excluded.insert(id) }
-        Outbox.shared.queueNutritionExclusions(path: path, excluded: excluded.sorted())
+        problem = Outbox.shared.queueNutritionExclusions(path: path, excluded: excluded.sorted()).problem
     }
 
     /// Por etiqueta, con la más poblada primero — el mismo orden de la web.
+    /// Un ingrediente aparece bajo todas las suyas, no solo la primera.
     private static func grouped(_ items: [PlanIngredient]) -> [(label: String, items: [PlanIngredient])] {
         var buckets: [String: [PlanIngredient]] = [:]
-        for item in items { buckets[item.mainLabel, default: []].append(item) }
+        for item in items {
+            for label in item.groupLabels { buckets[label, default: []].append(item) }
+        }
         return buckets
             .map { (label: $0.key, items: $0.value.sorted { $0.name < $1.name }) }
             .sorted { ($0.items.count, $1.label) > ($1.items.count, $0.label) }

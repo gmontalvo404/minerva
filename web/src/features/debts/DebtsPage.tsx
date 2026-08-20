@@ -7,6 +7,7 @@ import { formatCopNoCode, formatPercent } from "../../lib/format";
 import { translate } from "../../lib/i18n";
 import type { Language } from "../../lib/i18n";
 import { readOption, STORAGE_KEYS, writeStorage } from "../../lib/storage";
+import { useDataChanges } from "../../lib/useDataChanges";
 import { CreateDebtDialog } from "./CreateDebtDialog";
 import { DebtActionsMenu } from "./DebtActionsMenu";
 import { DebtDetailDialog } from "./DebtDetailDialog";
@@ -121,6 +122,12 @@ export function DebtsPage({ dataset, language, onSidebar }: DebtsPageProps) {
     setRaw(await getDebtsDetail(path));
     setLoading(false);
   }, [path]);
+
+  // Finalizar una deuda desde el teléfono escribe un movimiento; sin esto la
+  // tabla seguía mostrando el saldo viejo hasta recargar a mano.
+  useDataChanges(() => {
+    void getDebtsDetail(path).then(setRaw);
+  });
 
   useEffect(() => {
     void load();

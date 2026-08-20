@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getDataStamp, getDebtsDetail, getJson } from "../../lib/api";
-import type { DataStamp, DebtDetail } from "../../lib/api";
+import { getDebtsDetail, getJson } from "../../lib/api";
+import type { DebtDetail } from "../../lib/api";
 import { cashFlowRoot, debtsPath, SHARED_ROOT } from "../../lib/dataset";
 import type { Dataset } from "../../lib/dataset";
 import {
@@ -17,6 +17,7 @@ import { translate } from "../../lib/i18n";
 import type { Language } from "../../lib/i18n";
 import { MONTHS } from "../../lib/months";
 import { readOption, readStorage, STORAGE_KEYS, writeStorage, yearKey } from "../../lib/storage";
+import { useDataChanges } from "../../lib/useDataChanges";
 import {
   CardPanel,
   ViewSwitch,
@@ -160,37 +161,7 @@ export function CashFlowPage({ dataset, language, onSidebar }: CashFlowPageProps
   // The data can change underneath this tab: the iPhone through the outbox,
   // another tab beside it. Poll the cheap stamp and re-read silently when it
   // moves — never mid-typing, and not while the tab is hidden.
-  useEffect(() => {
-    let last: DataStamp | null = null;
-    let alive = true;
-    const tick = async () => {
-      if (document.hidden) return;
-      const active = document.activeElement;
-      if (
-        active instanceof HTMLInputElement ||
-        active instanceof HTMLTextAreaElement ||
-        active instanceof HTMLSelectElement
-      ) {
-        return;
-      }
-      const stamp = await getDataStamp();
-      if (!alive || stamp === null) return;
-      if (last !== null && stamp.app !== last.app) {
-        // Llegó un build nuevo del front: la pestaña se renueva sola.
-        window.location.reload();
-        return;
-      }
-      if (last !== null && stamp.data !== last.data) void load(true);
-      last = stamp;
-    };
-    const interval = window.setInterval(() => void tick(), 4000);
-    document.addEventListener("visibilitychange", tick);
-    return () => {
-      alive = false;
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", tick);
-    };
-  }, [load]);
+  useDataChanges(() => void load(true));
 
   const years = discovery?.dataset === dataset ? discovery.years : [];
 

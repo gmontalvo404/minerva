@@ -256,8 +256,11 @@ struct PlanIngredient: Decodable, Identifiable {
     let labels: [String]
     let store: String
 
-    /// La etiqueta con la que se agrupa en la pantalla de exclusiones.
-    var mainLabel: String { labels.first ?? "Sin categoría" }
+    /// Las etiquetas bajo las que se lista. Un ingrediente con varias es
+    /// alcanzable desde todas —el arroz se saca desde "Granos y harinas" o
+    /// desde "Carbohidratos"— como en la web. Agrupar solo por la primera
+    /// escondía "Carbohidratos" entero, que en el plan siempre va segunda.
+    var groupLabels: [String] { labels.isEmpty ? ["Sin categoría"] : labels }
 }
 
 struct PlanDay: Decodable, Identifiable {

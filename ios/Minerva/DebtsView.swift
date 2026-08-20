@@ -219,6 +219,7 @@ struct DebtScheduleView: View {
     var debtsPath = ""
     @State private var settling = false
     @State private var settled = false
+    @State private var problem: String?
 
     private var canSettle: Bool { !debtsPath.isEmpty && debt.remainingBalance > 0 && !settled }
 
@@ -276,7 +277,12 @@ struct DebtScheduleView: View {
     /// bandera. Confirma antes porque crea un movimiento de verdad.
     private var settleCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if settled {
+            if let problem {
+                Text(problem)
+                    .font(.forum(14))
+                    .foregroundStyle(theme.negative)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if settled {
                 Text("Pago final en camino. El Mac lo aplica y la deuda queda saldada.")
                     .font(.forum(15))
                     .foregroundStyle(theme.muted)
@@ -313,8 +319,9 @@ struct DebtScheduleView: View {
             titleVisibility: .visible
         ) {
             Button("Crear el pago final") {
-                Outbox.shared.queueSettleDebt(path: debtsPath, debtId: debt.id)
-                settled = true
+                let result = Outbox.shared.queueSettleDebt(path: debtsPath, debtId: debt.id)
+                problem = result.problem
+                settled = result.problem == nil
             }
             Button("Cancelar", role: .cancel) {}
         } message: {
