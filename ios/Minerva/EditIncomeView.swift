@@ -28,6 +28,10 @@ struct EditIncomeView: View {
     /// avisa del cambio después, cuando ya se apagó. El de al lado calculaba
     /// de vuelta y machacaba lo tecleado — escribías 500 y quedaba 490,52.
     @FocusState private var focused: String?
+    /// El valor que se está reponiendo para llevar el cursor al final. Se
+    /// compara por contenido y no por un booleano con temporizador: SwiftUI
+    /// avisa de los cambios cuando quiere, y una bandera ya me falló así.
+    @State private var reponiendo: String?
 
     private var theme: Theme { .of(scheme) }
     private var isNew: Bool { income == nil }
@@ -146,7 +150,25 @@ struct EditIncomeView: View {
                 .frame(minHeight: 46)
                 .background(shell)
                 .focused($focused, equals: key)
+                // Al entrar en un campo, el cursor al final. Un texto escrito
+                // por código deja el cursor en el inicio, así que lo siguiente
+                // que tecleabas se colaba delante de lo que ya había. Vaciar y
+                // reponer lo manda al final, que es donde se sigue escribiendo.
+                .onChange(of: focused) { quien in
+                    guard quien == key else { return }
+                    let actual = text.wrappedValue
+                    guard !actual.isEmpty else { return }
+                    reponiendo = actual
+                    text.wrappedValue = ""
+                    DispatchQueue.main.async { text.wrappedValue = actual }
+                }
                 .onChange(of: text.wrappedValue) { nuevo in
+                    // Mientras se repone no se calcula nada: el vaciado es un
+                    // apaño de cursor, no algo que la persona haya escrito.
+                    if let esperado = reponiendo {
+                        if nuevo == esperado { reponiendo = nil }
+                        return
+                    }
                     // Un cero delante se cuela al teclear sobre un campo que
                     // el cálculo había dejado en cero; se quita antes de nada.
                     let limpio = Self.noLeadingZero(nuevo)
