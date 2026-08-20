@@ -25,7 +25,15 @@ async function readError(response: Response): Promise<string> {
 
 /** Reads a JSON file served from the data folders. */
 export async function getJson<T>(path: string, options: { fallback?: T } = {}): Promise<T> {
-  const response = await fetch(`/${path}`, { headers: { Accept: "application/json" } });
+  // no-store: estos son archivos de datos que cambian bajo los pies — otra
+  // pestaña, el teléfono por el buzón, el propio servidor. Servidos como
+  // estáticos, el navegador los da por buenos de su caché y la página se queda
+  // con la versión de hace un rato; el sello de /api/data/stamp avisaba del
+  // cambio y la relectura devolvía lo mismo de antes.
+  const response = await fetch(`/${path}`, {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
 
   if (!response.ok) {
     if (options.fallback !== undefined && response.status === 404) {
@@ -77,7 +85,10 @@ export async function getNutritionPlan<T>(
   path: string,
   fallback: T,
 ): Promise<{ document: T; hash: string | null }> {
-  const response = await fetch(`/${path}`, { headers: { Accept: "application/json" } });
+  const response = await fetch(`/${path}`, {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
   if (!response.ok) {
     if (response.status === 404) return { document: fallback, hash: null };
     throw new ApiError(await readError(response), response.status);
