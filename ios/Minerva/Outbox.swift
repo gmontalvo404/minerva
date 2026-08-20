@@ -75,8 +75,14 @@ final class Outbox: ObservableObject {
         /// confirmada cuando el snapshot trae MÁS que eso — así un duplicado
         /// no se confunde con su original.
         var expectedMatches: Int?
+        /// A qué apunta: nil o "entry" es un movimiento, "income" un ingreso.
+        /// Sin esto la lista de movimientos pintaría los ingresos en vuelo, y
+        /// la reconciliación buscaría un ingreso entre los movimientos y no lo
+        /// encontraría jamás — el pendiente se quedaba de por vida.
+        var target: String?
 
         var effectiveKind: Kind { kind ?? .update }
+        var isIncome: Bool { target == "income" }
 
         func text(_ field: String) -> String? {
             if case .text(let value)? = values[field] { return value }
@@ -160,7 +166,8 @@ final class Outbox: ObservableObject {
     func pendingCreations(year: String, monthIndex: Int) -> [PendingCreation] {
         pending
             .filter { _, wish in
-                wish.effectiveKind == .create && wish.year == year && wish.monthIndex == monthIndex
+                wish.effectiveKind == .create && !wish.isIncome
+                    && wish.year == year && wish.monthIndex == monthIndex
             }
             .sorted { $0.value.queuedAt < $1.value.queuedAt }
             .map { key, wish in
@@ -171,6 +178,33 @@ final class Outbox: ObservableObject {
                     type: wish.text("type") ?? "needs",
                     amountCop: wish.number("amount_cop") ?? 0,
                     paid: wish.flag("paid") ?? false
+                )
+            }
+    }
+
+    /// Un ingreso recién creado que aún no ha vuelto en el snapshot.
+    struct PendingIncome: Identifiable {
+        let id: String
+        let description: String
+        let amountCop: Double
+        let amountUsd: Double
+        let received: Bool
+    }
+
+    func pendingIncomes(year: String, monthIndex: Int) -> [PendingIncome] {
+        pending
+            .filter { _, wish in
+                wish.effectiveKind == .create && wish.isIncome
+                    && wish.year == year && wish.monthIndex == monthIndex
+            }
+            .sorted { $0.value.queuedAt < $1.value.queuedAt }
+            .map { key, wish in
+                PendingIncome(
+                    id: key,
+                    description: wish.text("description") ?? "—",
+                    amountCop: wish.number("amount_cop") ?? 0,
+                    amountUsd: wish.number("amount_usd") ?? 0,
+                    received: wish.flag("received") ?? false
                 )
             }
     }
@@ -325,6 +359,7 @@ final class Outbox: ObservableObject {
     func queueUpdateIncome(
         _ changes: [String: PendingValue],
         income: Income,
+        year: String,
         syncFrom: String? = nil
     ) {
         guard !changes.isEmpty,
@@ -349,7 +384,10 @@ final class Outbox: ObservableObject {
         ]
         if let syncFrom { payload["sync_from"] = syncFrom }
         if case .success(let name) = writePlanCommand(payload, verb: "editar-ingreso") {
-            pending[key] = Pending(values: merged, queuedAt: Date(), fileName: name)
+            pending[key] = Pending(
+                values: merged, queuedAt: Date(), fileName: name, kind: .update,
+                year: year, monthIndex: monthIndex, target: "income"
+            )
             persist()
         }
     }
@@ -357,20 +395,42 @@ final class Outbox: ObservableObject {
     /// Un ingreso nuevo en el mes. No deja fila pendiente: aún no existe una a
     /// la que agarrarse — aparece cuando el Mac lo aplique.
     @discardableResult
-    func queueCreateIncome(_ fields: [String: PendingValue], path: String, monthIndex: Int) -> CommandResult {
+    func queueCreateIncome(
+        _ fields: [String: PendingValue],
+        path: String,
+        monthIndex: Int,
+        year: String,
+        existing: [Income]
+    ) -> CommandResult {
         guard !fields.isEmpty else { return .notWritten("el ingreso llegó vacío.") }
         guard !path.isEmpty else { return .noPath }
-        return result(of: writePlanCommand([
+        let written = writePlanCommand([
             "id": UUID().uuidString,
             "action": "create_income",
             "path": path,
             "month_index": monthIndex,
             "entry": fields.mapValues(\.raw),
-        ], verb: "crear-ingreso"))
+        ], verb: "crear-ingreso")
+        if case .success(let name) = written {
+            // La fila fantasma: el ingreso tarda lo que tarde el Mac en
+            // aplicarlo y iCloud en traerlo de vuelta, y sin nada en pantalla
+            // ese rato parece que el botón no hizo nada.
+            pending["income-new:\(UUID().uuidString)"] = Pending(
+                values: fields, queuedAt: Date(), fileName: name, kind: .create,
+                year: year, monthIndex: monthIndex,
+                // Cuántos IGUALES había ya, no cuántos ingresos hay: la
+                // creación se confirma cuando aparece uno más como este, y
+                // contar el total dejaba el fantasma pegado para siempre.
+                expectedMatches: existing.filter { Self.matchesIncome(fields, $0) }.count,
+                target: "income"
+            )
+            persist()
+        }
+        return result(of: written)
     }
 
     /// Borrar un ingreso.
-    func queueDeleteIncome(_ income: Income) {
+    func queueDeleteIncome(_ income: Income, year: String) {
         guard let path = income.sourcePath,
               let index = income.sourceIndex,
               let monthIndex = income.monthIndex else { return }
@@ -386,7 +446,10 @@ final class Outbox: ObservableObject {
             "income_index": index,
             "description": income.description ?? "",
         ], verb: "borrar-ingreso") {
-            pending[key] = Pending(values: ["deleted": .flag(true)], queuedAt: Date(), fileName: name)
+            pending[key] = Pending(
+                values: ["deleted": .flag(true)], queuedAt: Date(), fileName: name,
+                kind: .delete, year: year, monthIndex: monthIndex, target: "income"
+            )
             persist()
         }
     }
@@ -596,12 +659,37 @@ final class Outbox: ObservableObject {
             remaining.removeValue(forKey: key)
         }
 
-        for (key, wish) in remaining where wish.effectiveKind == .create {
+        for (key, wish) in remaining where wish.effectiveKind == .create && !wish.isIncome {
             guard wish.year == year,
                   let month = months.first(where: { $0.index == wish.monthIndex }) else { continue }
             let matching = month.entries.filter { Self.matchesCreation(wish.values, $0) }.count
             if matching > (wish.expectedMatches ?? 0) {
                 remaining.removeValue(forKey: key)
+            }
+        }
+
+        // Los ingresos viven en otra lista, así que se confirman aparte. Sin
+        // esto ningún pendiente suyo se cerraba nunca: la vuelta de arriba solo
+        // mira movimientos, y un ingreso no aparece jamás entre ellos.
+        for (key, wish) in remaining where wish.isIncome {
+            guard wish.year == year,
+                  let month = months.first(where: { $0.index == wish.monthIndex }) else { continue }
+            switch wish.effectiveKind {
+            case .create:
+                let iguales = month.incomes.filter { Self.matchesIncome(wish.values, $0) }.count
+                if iguales > (wish.expectedMatches ?? 0) { remaining.removeValue(forKey: key) }
+            case .delete:
+                // La posición de la que se pidió el borrado ya no la ocupa el
+                // mismo ingreso, o el mes tiene uno menos.
+                let sigue = month.incomes.contains { "income:\($0.sourcePath ?? "")#\($0.sourceIndex ?? -1)" == key }
+                if !sigue { remaining.removeValue(forKey: key) }
+            case .update:
+                guard let income = month.incomes.first(where: {
+                    "income:\($0.sourcePath ?? "")#\($0.sourceIndex ?? -1)" == key
+                }) else { continue }
+                if wish.values.allSatisfy({ Self.matches(income: income, field: $0.key, value: $0.value) }) {
+                    remaining.removeValue(forKey: key)
+                }
             }
         }
 
@@ -626,6 +714,29 @@ final class Outbox: ObservableObject {
             return false
         }
         return (entry.type ?? "needs") == Self.creationType(of: fields)
+    }
+
+    /// ¿Este ingreso del snapshot es el que se pidió crear?
+    private static func matchesIncome(_ fields: [String: PendingValue], _ income: Income) -> Bool {
+        if case .text(let description)? = fields["description"],
+           (income.description ?? "") != description { return false }
+        if case .number(let cop)? = fields["amount_cop"],
+           abs((income.amountCop ?? 0) - cop) > 0.005 { return false }
+        if case .number(let usd)? = fields["amount_usd"],
+           abs((income.amountUsd ?? 0) - usd) > 0.005 { return false }
+        return true
+    }
+
+    /// ¿El ingreso del snapshot ya trae el valor pedido para el campo?
+    private static func matches(income: Income, field: String, value: PendingValue) -> Bool {
+        switch (field, value) {
+        case ("received", .flag(let flag)): return (income.received ?? false) == flag
+        case ("description", .text(let text)): return (income.description ?? "") == text
+        case ("amount_cop", .number(let n)): return abs((income.amountCop ?? 0) - n) < 0.005
+        case ("amount_usd", .number(let n)): return abs((income.amountUsd ?? 0) - n) < 0.005
+        case ("usd_cop", .number(let n)): return abs((income.usdCop ?? 0) - n) < 0.005
+        default: return false
+        }
     }
 
     /// ¿El movimiento del snapshot ya trae el valor pedido para el campo?

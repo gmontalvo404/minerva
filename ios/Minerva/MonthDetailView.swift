@@ -69,7 +69,9 @@ struct MonthDetailView: View {
                     }
                     distribution
                     entriesByType
-                    if !month.incomes.isEmpty {
+                    // También con el mes vacío: si hay uno en camino, tiene
+                    // que verse en algún sitio, y el "+" vive en esta tarjeta.
+                    if !month.incomes.isEmpty || canEdit {
                         incomeList
                     }
                 }
@@ -99,7 +101,7 @@ struct MonthDetailView: View {
                 if let demo {
                     demo.saveIncome(fields, income)
                 } else {
-                    Outbox.shared.queueUpdateIncome(fields, income: income, syncFrom: syncFrom)
+                    Outbox.shared.queueUpdateIncome(fields, income: income, year: year, syncFrom: syncFrom)
                 }
             }
         }
@@ -109,7 +111,10 @@ struct MonthDetailView: View {
                     demo.saveIncome(fields, nil)
                 } else {
                     incomeProblem = Outbox.shared
-                        .queueCreateIncome(fields, path: incomesPath, monthIndex: month.index)
+                        .queueCreateIncome(
+                            fields, path: incomesPath, monthIndex: month.index,
+                            year: year, existing: month.incomes
+                        )
                         .problem
                 }
             }
@@ -433,6 +438,32 @@ struct MonthDetailView: View {
     /// El switch de pagado, separado del indicador: uno informa la
     /// sincronización, el otro cambia el estado. Enseña el valor pedido
     /// mientras el comando viaja.
+    /// Un ingreso encolado que aún no ha vuelto: se ve dónde va a caer, en
+    /// reloj y apagado, hasta que el snapshot lo traiga de verdad.
+    private func incomeGhost(_ fantasma: Outbox.PendingIncome) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "clock")
+                .font(.system(size: 13))
+                .foregroundStyle(theme.muted)
+                .frame(width: 32)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(fantasma.description.isEmpty ? "Ingreso" : fantasma.description)
+                    .font(.forum(17))
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+                Text(fantasma.received ? "Enviándose · recibido" : "Enviándose")
+                    .font(.forum(13))
+                    .foregroundStyle(theme.muted)
+            }
+            Spacer(minLength: 8)
+            Text(Format.copNoCode(fantasma.amountCop))
+                .font(.forum(17))
+                .foregroundStyle(theme.heading)
+                .lineLimit(1)
+        }
+        .opacity(0.55)
+    }
+
     /// El recibido de un ingreso: mismo gesto y mismo optimismo que el pagado
     /// de un movimiento, solo que el comando viaja por su propia puerta.
     private func receivedSwitch(for income: Income) -> some View {
@@ -630,6 +661,9 @@ struct MonthDetailView: View {
                     .foregroundStyle(theme.negative)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            ForEach(outbox.pendingIncomes(year: year, monthIndex: month.index)) { fantasma in
+                incomeGhost(fantasma)
+            }
             ForEach(month.incomes) { income in
                 HStack(spacing: 10) {
                     receivedSwitch(for: income)
@@ -660,7 +694,7 @@ struct MonthDetailView: View {
                         Button("Editar") { editingIncome = income }
                         Button("Borrar", role: .destructive) {
                             if let demo { demo.deleteIncome(income) }
-                            else { Outbox.shared.queueDeleteIncome(income) }
+                            else { Outbox.shared.queueDeleteIncome(income, year: year) }
                         }
                     }
                 }
