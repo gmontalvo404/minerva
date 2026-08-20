@@ -42,6 +42,8 @@ struct MonthDetailView: View {
     @State private var incomeProblem: String?
     /// El ingreso en vuelo que se está reabriendo para cambiarlo.
     @State private var editingGhost: Outbox.PendingIncome?
+    /// El movimiento en vuelo que se está reabriendo para cambiarlo.
+    @State private var editingGhostEntry: Outbox.PendingCreation?
 
     /// Dónde escribir un ingreso de este mes. Lo dice el snapshot; si es uno
     /// anterior a que lo exportara, se toma de un ingreso que ya exista, y si
@@ -105,6 +107,20 @@ struct MonthDetailView: View {
                 } else {
                     Outbox.shared.queueUpdateIncome(fields, income: income, year: year, syncFrom: syncFrom)
                 }
+            }
+        }
+        .sheet(item: $editingGhostEntry) { fantasma in
+            // Como alta, con lo encolado ya escrito: guardar reemplaza el
+            // comando anterior, así que vale lo último que se escribió.
+            EditEntryView(
+                entry: nil,
+                prefill: fantasma.fields,
+                categories: categoryOptions(for: nil),
+                debts: debts
+            ) { campos in
+                Outbox.shared.replacePendingCreation(
+                    fantasma.id, fields: campos, in: month, year: year
+                )
             }
         }
         .sheet(item: $editingGhost) { fantasma in
@@ -399,6 +415,18 @@ struct MonthDetailView: View {
     }
 
     private func ghostRow(_ ghost: Outbox.PendingCreation) -> some View {
+        ghostBody(ghost)
+            .contentShape(Rectangle())
+            .onTapGesture { editingGhostEntry = ghost }
+            .contextMenu {
+                Button("Editar") { editingGhostEntry = ghost }
+                Button("Quitar", role: .destructive) {
+                    Outbox.shared.cancelPendingCreation(ghost.id)
+                }
+            }
+    }
+
+    private func ghostBody(_ ghost: Outbox.PendingCreation) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "clock.fill")
                 .font(.caption)
