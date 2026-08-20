@@ -31,8 +31,13 @@ struct EditEntryView: View {
     /// que ni se ofrece; cuando el saldo no se conoce se deja pasar y decide el
     /// servidor. La que ya estaba marcada se queda visible, para poder
     /// desmarcarla en un movimiento viejo.
-    /// El nombre con el que los dos datasets guardan la categoría de deudas.
-    private static let debtCategory = "Debt"
+    /// Con qué categoría nace un movimiento según su tipo. Son los nombres del
+    /// catálogo, no las etiquetas traducidas. Punto de partida, no decisión: la
+    /// categoría queda a un toque de ser otra.
+    private static let categoryByKind: [EntryKind: String] = [
+        .debts: "Debt",
+        .savings: "Saving",
+    ]
 
     private var payableDebts: [DebtOption] {
         debts.filter { ($0.remainingBalance ?? 1) > 0 || linkedDebts.contains($0.id) }
@@ -65,6 +70,10 @@ struct EditEntryView: View {
 
     init(
         entry: Entry?,
+        /// Valores de arranque sin dejar de ser un alta: es lo que se usa al
+        /// reabrir un movimiento que sigue en el buzón, donde guardar rehace
+        /// la intención entera en vez de comparar diferencias.
+        prefill: [String: Outbox.PendingValue]? = nil,
         categories: [String],
         debts: [DebtOption],
         onSave: @escaping ([String: Outbox.PendingValue]) -> Void
@@ -73,11 +82,24 @@ struct EditEntryView: View {
         self.categories = categories
         self.debts = debts
         self.onSave = onSave
-        _descriptionText = State(initialValue: entry?.description ?? "")
-        _category = State(initialValue: entry?.category ?? "")
-        _kind = State(initialValue: EntryKind(rawValue: entry?.type ?? "") ?? .needs)
-        _amountText = State(initialValue: entry.map { Self.plainAmount($0.amountCop) } ?? "")
-        _paid = State(initialValue: entry?.isPaid ?? false)
+        func texto(_ campo: String) -> String? {
+            if case .text(let valor)? = prefill?[campo] { return valor }
+            return nil
+        }
+        func numero(_ campo: String) -> Double? {
+            if case .number(let valor)? = prefill?[campo] { return valor }
+            return nil
+        }
+        func bandera(_ campo: String) -> Bool? {
+            if case .flag(let valor)? = prefill?[campo] { return valor }
+            return nil
+        }
+        _descriptionText = State(initialValue: entry?.description ?? texto("description") ?? "")
+        _category = State(initialValue: entry?.category ?? texto("category") ?? "")
+        _kind = State(initialValue: EntryKind(rawValue: entry?.type ?? texto("type") ?? "") ?? .needs)
+        _amountText = State(initialValue: entry.map { Self.plainAmount($0.amountCop) }
+            ?? numero("amount_cop").map { Self.plainAmount($0) } ?? "")
+        _paid = State(initialValue: entry?.isPaid ?? bandera("paid") ?? false)
         _linkedDebts = State(initialValue: Set(entry?.linkedDebts ?? []))
     }
 
@@ -115,11 +137,8 @@ struct EditEntryView: View {
                     theme: theme
                 ) { picked in
                     kind = EntryKind(rawValue: picked) ?? kind
-                    // Un movimiento de deudas es de la categoría Debt salvo
-                    // excepción: se elige sola y queda lista para cambiarla.
-                    // Es el nombre del catálogo, no la etiqueta traducida.
-                    if kind == .debts, categories.contains(Self.debtCategory) {
-                        category = Self.debtCategory
+                    if let sugerida = Self.categoryByKind[kind], categories.contains(sugerida) {
+                        category = sugerida
                     }
                 }
             }
@@ -152,17 +171,6 @@ struct EditEntryView: View {
                     .background(inputShell(radius: 14))
             }
 
-            field("Categoría") {
-                Button {
-                    endEditing()
-                    activePicker = .category
-                } label: {
-                    selectRow(category.isEmpty ? "—" : category)
-                        .background(inputShell(radius: 16))
-                }
-                .buttonStyle(.plain)
-            }
-
             field("Tipo") {
                 Button {
                     endEditing()
@@ -179,6 +187,17 @@ struct EditEntryView: View {
                                         .stroke(kind.color.opacity(dark ? 0.44 : 0.22), lineWidth: 1)
                                 )
                         )
+                }
+                .buttonStyle(.plain)
+            }
+
+            field("Categoría") {
+                Button {
+                    endEditing()
+                    activePicker = .category
+                } label: {
+                    selectRow(category.isEmpty ? "—" : category)
+                        .background(inputShell(radius: 16))
                 }
                 .buttonStyle(.plain)
             }

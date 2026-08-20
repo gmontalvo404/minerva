@@ -58,6 +58,16 @@ export function getCategoryLabel(category: string, language: Language): string {
  */
 export const DEBT_CATEGORY = "Debt";
 
+/**
+ * Con qué categoría nace un movimiento según su tipo. Nombres del catálogo, no
+ * etiquetas traducidas. Es un punto de partida: la categoría queda a un clic
+ * de ser otra.
+ */
+export const CATEGORY_BY_TYPE: Record<string, string> = {
+  debts: DEBT_CATEGORY,
+  savings: "Saving",
+};
+
 export interface CategoryOption {
   value: string;
   label: string;

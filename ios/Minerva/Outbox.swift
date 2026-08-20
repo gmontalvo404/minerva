@@ -166,6 +166,8 @@ final class Outbox: ObservableObject {
         let type: String
         let amountCop: Double
         let paid: Bool
+        /// Lo encolado tal cual, para reabrirlo y rehacer la intención entera.
+        let fields: [String: PendingValue]
     }
 
     /// Las creaciones en vuelo de un mes, para pintarlas al final de su tipo.
@@ -183,7 +185,8 @@ final class Outbox: ObservableObject {
                     category: wish.text("category") ?? "",
                     type: wish.text("type") ?? "needs",
                     amountCop: wish.number("amount_cop") ?? 0,
-                    paid: wish.flag("paid") ?? false
+                    paid: wish.flag("paid") ?? false,
+                    fields: wish.values
                 )
             }
     }
@@ -224,12 +227,7 @@ final class Outbox: ObservableObject {
     /// Retira un ingreso que todavía no ha salido: el archivo del buzón se
     /// borra y el fantasma desaparece. Nada que deshacer en el Mac, porque
     /// nunca llegó a saberlo.
-    func cancelPendingIncome(_ id: String) {
-        guard let wish = pending[id] else { return }
-        if let file = wish.fileName { SnapshotStore.removeCommand(named: file) }
-        pending.removeValue(forKey: id)
-        persist()
-    }
+    func cancelPendingIncome(_ id: String) { cancelPendingCreation(id) }
 
     /// Cambia un ingreso en vuelo: se retira el comando anterior y se encola
     /// el nuevo. Editar algo que aún no existe es reescribir la intención.
@@ -652,6 +650,28 @@ final class Outbox: ObservableObject {
         } catch {
             // Sin acceso a la carpeta no hay optimismo que valga.
         }
+    }
+
+    /// Retira una creación que aún no ha salido: el archivo del buzón se borra
+    /// y el fantasma desaparece. Vale para movimientos y para ingresos — nada
+    /// que deshacer en el Mac, porque nunca llegó a saberlo.
+    func cancelPendingCreation(_ id: String) {
+        guard let wish = pending[id] else { return }
+        if let file = wish.fileName { SnapshotStore.removeCommand(named: file) }
+        pending.removeValue(forKey: id)
+        persist()
+    }
+
+    /// Cambia un movimiento en vuelo: se retira el comando anterior y se
+    /// encola el nuevo, así que manda siempre lo último que se escribió.
+    func replacePendingCreation(
+        _ id: String,
+        fields: [String: PendingValue],
+        in month: MonthSummary,
+        year: String
+    ) {
+        cancelPendingCreation(id)
+        queueCreate(fields, in: month, year: year)
     }
 
     private static let fileStamp: DateFormatter = {
