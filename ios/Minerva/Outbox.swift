@@ -356,15 +356,17 @@ final class Outbox: ObservableObject {
 
     /// Un ingreso nuevo en el mes. No deja fila pendiente: aún no existe una a
     /// la que agarrarse — aparece cuando el Mac lo aplique.
-    func queueCreateIncome(_ fields: [String: PendingValue], path: String, monthIndex: Int) {
-        guard !fields.isEmpty, !path.isEmpty else { return }
-        _ = writePlanCommand([
+    @discardableResult
+    func queueCreateIncome(_ fields: [String: PendingValue], path: String, monthIndex: Int) -> CommandResult {
+        guard !fields.isEmpty else { return .notWritten("el ingreso llegó vacío.") }
+        guard !path.isEmpty else { return .noPath }
+        return result(of: writePlanCommand([
             "id": UUID().uuidString,
             "action": "create_income",
             "path": path,
             "month_index": monthIndex,
             "entry": fields.mapValues(\.raw),
-        ], verb: "crear-ingreso")
+        ], verb: "crear-ingreso"))
     }
 
     /// Borrar un ingreso.

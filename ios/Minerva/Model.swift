@@ -93,6 +93,9 @@ struct MonthSummary: Decodable, Identifiable {
     var byCategory: [CategoryTotal]
     var entries: [Entry]
     var incomes: [Income]
+    /// El archivo de ingresos de este mes. Opcional: un snapshot anterior al
+    /// que lo exporta no lo trae, y entonces se deduce.
+    var incomesPath: String?
     /// A qué archivo escribe cada tipo — lo que un movimiento nuevo necesita
     /// cuando el mes aún no tiene ninguno de dónde copiar la ruta.
     let sourcePathByType: [String: String]?
