@@ -23,9 +23,11 @@ struct EditIncomeView: View {
     @State private var received: Bool
     /// El último de los tres montos que se tocó.
     @State private var touched: String?
-    /// Escribir en un campo mueve el otro, y eso vuelve a disparar onChange:
-    /// sin esta guarda los dos se persiguen.
-    @State private var syncing = false
+    /// Quién tiene el teclado. Solo ese campo manda: rellenar el otro vuelve a
+    /// disparar onChange, y una bandera no sirve para frenarlo porque SwiftUI
+    /// avisa del cambio después, cuando ya se apagó. El de al lado calculaba
+    /// de vuelta y machacaba lo tecleado — escribías 500 y quedaba 490,52.
+    @FocusState private var focused: String?
 
     private var theme: Theme { .of(scheme) }
     private var isNew: Bool { income == nil }
@@ -143,6 +145,7 @@ struct EditIncomeView: View {
                 .padding(.horizontal, 14)
                 .frame(minHeight: 46)
                 .background(shell)
+                .focused($focused, equals: key)
                 .onChange(of: text.wrappedValue) { nuevo in
                     // Un cero delante se cuela al teclear sobre un campo que
                     // el cálculo había dejado en cero; se quita antes de nada.
@@ -151,9 +154,9 @@ struct EditIncomeView: View {
                         text.wrappedValue = limpio
                         return
                     }
-                    // Solo cuenta como "tocado" lo que escribe una persona: el
-                    // otro campo también dispara esto al rellenarse solo.
-                    if !syncing { touched = key }
+                    // Lo que se rellenó solo no vuelve a calcular nada.
+                    guard focused == key else { return }
+                    touched = key
                     sync(from: key, value: limpio)
                 }
         }
@@ -163,11 +166,7 @@ struct EditIncomeView: View {
     /// otro se rellena con la tasa que haya. Queda editable — cambiarlo a mano
     /// manda lo que quede escrito, no lo calculado.
     private func sync(from key: String, value: String) {
-        guard !syncing else { return }
         let rate = Self.parse(usdCop) ?? 0
-        syncing = true
-        defer { syncing = false }
-
         switch key {
         case "amount_usd":
             if value.trimmingCharacters(in: .whitespaces).isEmpty { amountCop = "" }
