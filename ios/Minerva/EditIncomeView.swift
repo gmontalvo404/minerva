@@ -62,7 +62,7 @@ struct EditIncomeView: View {
                             .background(shell)
                     }
                     money("USD", text: $amountUsd, key: "amount_usd")
-                    money("Tasa USD → COP", text: $usdCop, key: "usd_cop")
+                    money("FX", text: $usdCop, key: "usd_cop")
                     Text("Cuántos pesos vale un dólar. Escribe uno de los dos montos y el otro se calcula.")
                         .font(.forum(13))
                         .foregroundStyle(theme.muted)
