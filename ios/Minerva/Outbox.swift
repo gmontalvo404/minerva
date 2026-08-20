@@ -75,6 +75,12 @@ final class Outbox: ObservableObject {
         /// confirmada cuando el snapshot trae MÁS que eso — así un duplicado
         /// no se confunde con su original.
         var expectedMatches: Int?
+        /// La descripción que tenía el ingreso al encolar. Su clave es la
+        /// POSICIÓN en el mes, y borrar uno corre a los de abajo: sin esto el
+        /// que hereda la posición hereda también el pendiente y sale apagado
+        /// o con un valor que nadie le pidió. Va fuera de `values` porque eso
+        /// es lo que viaja al servidor como cambios.
+        var identity: String?
         /// A qué apunta: nil o "entry" es un movimiento, "income" un ingreso.
         /// Sin esto la lista de movimientos pintaría los ingresos en vuelo, y
         /// la reconciliación buscaría un ingreso entre los movimientos y no lo
@@ -386,7 +392,8 @@ final class Outbox: ObservableObject {
         if case .success(let name) = writePlanCommand(payload, verb: "editar-ingreso") {
             pending[key] = Pending(
                 values: merged, queuedAt: Date(), fileName: name, kind: .update,
-                year: year, monthIndex: monthIndex, target: "income"
+                year: year, monthIndex: monthIndex,
+                identity: income.description ?? "", target: "income"
             )
             persist()
         }
@@ -430,43 +437,52 @@ final class Outbox: ObservableObject {
     }
 
     /// Borrar un ingreso.
-    func queueDeleteIncome(_ income: Income, year: String) {
+    @discardableResult
+    func queueDeleteIncome(_ income: Income, year: String) -> CommandResult {
         guard let path = income.sourcePath,
               let index = income.sourceIndex,
-              let monthIndex = income.monthIndex else { return }
+              let monthIndex = income.monthIndex else { return .noPath }
         let key = "income:\(path)#\(index)"
         if let previousFile = pending[key]?.fileName {
             SnapshotStore.removeCommand(named: previousFile)
         }
-        if case .success(let name) = writePlanCommand([
+        let written = writePlanCommand([
             "id": UUID().uuidString,
             "action": "delete_income",
             "path": path,
             "month_index": monthIndex,
             "income_index": index,
             "description": income.description ?? "",
-        ], verb: "borrar-ingreso") {
+        ], verb: "borrar-ingreso")
+        if case .success(let name) = written {
             pending[key] = Pending(
                 values: ["deleted": .flag(true)], queuedAt: Date(), fileName: name,
-                kind: .delete, year: year, monthIndex: monthIndex, target: "income"
+                kind: .delete, year: year, monthIndex: monthIndex,
+                identity: income.description ?? "", target: "income"
             )
             persist()
         }
+        return result(of: written)
+    }
+
+    /// El deseo en vuelo de ESTE ingreso, si lo hay. La posición sola no
+    /// basta: tras un borrado la ocupa otro, y heredaría lo que no es suyo.
+    private func wish(for income: Income) -> Pending? {
+        guard let path = income.sourcePath, let index = income.sourceIndex,
+              let wish = pending["income:\(path)#\(index)"] else { return nil }
+        guard wish.identity == nil || wish.identity == (income.description ?? "") else { return nil }
+        return wish
     }
 
     /// Si este ingreso tiene un borrado en vuelo.
     func incomeIsDeleting(_ income: Income) -> Bool {
-        guard let path = income.sourcePath, let index = income.sourceIndex else { return false }
-        if case .flag(true)? = pending["income:\(path)#\(index)"]?.values["deleted"] { return true }
+        if case .flag(true)? = wish(for: income)?.values["deleted"] { return true }
         return false
     }
 
     /// Lo que este ingreso quedó pidiendo, si hay algo en vuelo.
     func desiredReceived(for income: Income) -> Bool? {
-        guard let path = income.sourcePath, let index = income.sourceIndex else { return nil }
-        if case .flag(let value)? = pending["income:\(path)#\(index)"]?.values["received"] {
-            return value
-        }
+        if case .flag(let value)? = wish(for: income)?.values["received"] { return value }
         return nil
     }
 
