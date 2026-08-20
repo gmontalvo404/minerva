@@ -388,7 +388,7 @@ export function AddIncomeDialog({
         </label>
 
         {numberField(t("monthly_entries_usd"), amountUsd, typeUsd)}
-        {numberField(t("income_fx_field"), usdCop, typeRate)}
+        {numberField(t("monthly_income_fx"), usdCop, typeRate)}
         {numberField(t("monthly_entries_cop"), amountCop, typeCop)}
         <p className="field__hint movement-form__full">{t("income_fx_hint")}</p>
 
