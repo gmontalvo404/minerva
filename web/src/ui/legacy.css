@@ -253,12 +253,37 @@ code {
   max-width: 100%;
 }
 
-.control-sidebar .select,
 .control-sidebar .view-button {
   min-height: var(--control-height);
   min-width: 0;
-  font-size: 0.85rem;
+  font-size: var(--control-font);
   padding-inline: 0.6rem;
+}
+
+/* Los desplegables del sidebar (Módulo, Data) al tamaño de los botones que
+   tienen al lado. La caja y el botón se reparten los 40: sin contar el relleno
+   de la caja, el desplegable acababa midiendo 62 contra 40. La regla anterior
+   apuntaba a `.select`, una clase que el componente no llega a renderizar, así
+   que no hacía nada. */
+.control-sidebar .select-shell {
+  padding: 3px;
+  border-radius: 16px;
+}
+
+.control-sidebar .pretty-select__button {
+  /* 40 = 32 del botón + 6 de relleno de la caja + 2 de su borde. */
+  min-height: calc(var(--control-height) - 8px);
+  min-width: 0;
+  font-size: var(--control-font);
+  padding: 0 1.9rem 0 0.7rem;
+  border-radius: 13px;
+}
+
+.control-sidebar .select-shell::after {
+  right: 12px;
+  border-left-width: 6px;
+  border-right-width: 6px;
+  border-top-width: 7px;
 }
 
 .control-sidebar .view-switch {
@@ -340,7 +365,7 @@ code {
   padding: 0 0.35rem;
   border-radius: 13px;
   margin-bottom: 3px;
-  font-size: 0.82rem;
+  font-size: var(--control-font);
   line-height: 1.1;
 }
 
@@ -444,6 +469,7 @@ code {
   justify-content: center;
   min-height: 0;
   height: var(--hero-control-button-height);
+  font-size: var(--control-font);
   border-radius: 13px;
 }
 

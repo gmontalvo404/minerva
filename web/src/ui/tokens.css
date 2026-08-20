@@ -75,6 +75,10 @@
      the header switch has always rendered; the sidebar buttons and the inputs
      of the entry tables read it from here so the three cannot drift apart. */
   --control-height: 40px;
+  /* El tipo de todo control: switch del header, botones del sidebar y los
+     desplegables. Estaba suelto en cada regla, y por eso los desplegables se
+     quedaron en 16px mientras los botones bajaban a 13. */
+  --control-font: 0.82rem;
   --control-height-sm: 34px;
   --control-padding: 0 var(--space-4);
   --transition: 160ms ease;
