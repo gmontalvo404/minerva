@@ -1284,6 +1284,11 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             # sin ella el teléfono los pinta pero no puede señalar cuál marcar
             # como recibido. La API de ingresos pide justo estos tres datos.
             incomes_relative = f"{cash_flow_root}/{year}/incomes/incomes.json"
+            # El archivo de ingresos del mes, dicho aparte: crear el primero de
+            # un mes no puede depender de que ya exista uno del que copiar la
+            # ruta, y un snapshot viejo tampoco tiene por qué dejar al teléfono
+            # sin saber dónde escribir.
+            summary["incomes_path"] = incomes_relative
             summary["incomes"] = [
                 {
                     **income,

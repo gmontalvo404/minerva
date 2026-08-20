@@ -37,6 +37,18 @@ struct MonthDetailView: View {
     @State private var editingEntry: Entry?
     @State private var editingIncome: Income?
     @State private var creatingIncome = false
+    /// Lo que salió mal al encolar un ingreso. Rendirse sin decir nada es lo
+    /// que hacía que "agregar" pareciera no hacer nada.
+    @State private var incomeProblem: String?
+
+    /// Dónde escribir un ingreso de este mes. Lo dice el snapshot; si es uno
+    /// anterior a que lo exportara, se toma de un ingreso que ya exista, y si
+    /// tampoco hay, se arma con el año — que es la forma que el servidor usa.
+    private var incomesPath: String {
+        if let dicho = month.incomesPath, !dicho.isEmpty { return dicho }
+        if let heredado = month.incomes.first?.sourcePath, !heredado.isEmpty { return heredado }
+        return "finance/data/cash_flow/\(year)/incomes/incomes.json"
+    }
     @State private var showCreate = false
     @State private var entryToDelete: Entry?
     @State private var historyEntry: Entry?
@@ -95,8 +107,10 @@ struct MonthDetailView: View {
             EditIncomeView(income: nil, monthUsdCop: month.usdCop) { fields, _ in
                 if let demo {
                     demo.saveIncome(fields, nil)
-                } else if let path = month.incomes.first?.sourcePath {
-                    Outbox.shared.queueCreateIncome(fields, path: path, monthIndex: month.index)
+                } else {
+                    incomeProblem = Outbox.shared
+                        .queueCreateIncome(fields, path: incomesPath, monthIndex: month.index)
+                        .problem
                 }
             }
         }
@@ -598,6 +612,7 @@ struct MonthDetailView: View {
                 Spacer()
                 if canEdit {
                     Button {
+                        incomeProblem = nil
                         creatingIncome = true
                     } label: {
                         Image(systemName: "plus")
@@ -608,6 +623,12 @@ struct MonthDetailView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Agregar ingreso")
                 }
+            }
+            if let incomeProblem {
+                Text(incomeProblem)
+                    .font(.forum(13))
+                    .foregroundStyle(theme.negative)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             ForEach(month.incomes) { income in
                 HStack(spacing: 10) {
