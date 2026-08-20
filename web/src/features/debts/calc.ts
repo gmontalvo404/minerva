@@ -46,15 +46,6 @@ export interface Debt {
   schedule: SchedulePeriod[];
 }
 
-/** The name is bilingual in the file; pick the one for the current language. */
-export function debtName(
-  debt: { id: string; name: string | { es?: string; en?: string } },
-  language: "es" | "en",
-): string {
-  if (typeof debt.name === "string") return debt.name;
-  return debt.name?.[language] ?? debt.name?.es ?? debt.name?.en ?? debt.id;
-}
-
 export interface DebtTotals {
   count: number;
   monthlyFee: number;

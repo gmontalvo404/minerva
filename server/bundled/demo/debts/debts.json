@@ -2,10 +2,7 @@
   "debts": [
     {
       "id": "demo-moto",
-      "name": {
-        "es": "Moto",
-        "en": "Motorcycle"
-      },
+      "name": "Moto",
       "capital": 12000000,
       "initial_investment": 2000000,
       "paid_installments": 7,
@@ -20,10 +17,7 @@
     },
     {
       "id": "demo-portatil",
-      "name": {
-        "es": "Portátil",
-        "en": "Laptop"
-      },
+      "name": "Portátil",
       "capital": 4800000,
       "initial_investment": 0,
       "paid_installments": 3,
@@ -38,10 +32,7 @@
     },
     {
       "id": "demo-curso",
-      "name": {
-        "es": "Curso de inglés",
-        "en": "English course"
-      },
+      "name": "Curso de inglés",
       "capital": 3600000,
       "initial_investment": 600000,
       "paid_installments": 5,
@@ -56,10 +47,7 @@
     },
     {
       "id": "demo-nevera",
-      "name": {
-        "es": "Nevera",
-        "en": "Fridge"
-      },
+      "name": "Nevera",
       "capital": 3200000,
       "initial_investment": 200000,
       "paid_installments": 12,

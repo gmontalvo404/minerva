@@ -906,8 +906,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         detail = self._build_debt_detail(
             debt, self._debt_linked_payments_across_years(debt, debts)
         )
-        raw_name = detail.get("name")
-        name = raw_name.get("es") if isinstance(raw_name, dict) else (raw_name or debt_id)
+        name = str(detail.get("name") or debt_id)
         remaining = round(self._to_finite_float(detail.get("remaining_balance", 0)), 2)
         if remaining <= 0:
             raise ValueError(f"La deuda «{name}» ya está cancelada.")
@@ -1802,7 +1801,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
 
         return {
             "id": str(debt.get("id", "")),
-            "name": debt.get("name"),
+            "name": self._debt_label(debt),
             "capital": round(capital, 2),
             "initial_investment": round(initial_investment, 2),
             "financed_capital": round(financed, 2),
@@ -2821,8 +2820,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             detail = self._build_debt_detail(
                 debt, self._debt_linked_payments_across_years(debt, debts)
             )
-            raw_name = detail.get("name")
-            name = raw_name.get("es") if isinstance(raw_name, dict) else (raw_name or debt_id)
+            name = str(detail.get("name") or debt_id)
             headroom = self._to_finite_float(detail.get("remaining_balance", 0))
             if debt_id in already:
                 headroom += own
@@ -3020,7 +3018,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
         capital = self._to_non_negative_amount(payload.get("capital", 0))
         term_months = self._to_bounded_int(payload.get("term_months", 1), minimum=1, maximum=600)
         debt = {
-            "id": self._unique_debt_id(name["es"] or name["en"], existing_ids),
+            "id": self._unique_debt_id(name, existing_ids),
             "name": name,
             "capital": capital,
             "initial_investment": min(
@@ -3048,21 +3046,29 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
 
         return debt
 
-    def _normalize_debt_name(self, value: object) -> dict:
+    @staticmethod
+    def _debt_name_text(value: object) -> str:
+        """Un nombre de deuda como texto, vacío si no hay ninguno.
+
+        Se guardó un tiempo como `{"es": …, "en": …}`, y la misma deuda acababa
+        llamándose distinto según con qué idioma la abrieras. El nombre de una
+        deuda es un nombre propio y no se traduce: es uno solo. Un dict de una
+        versión vieja se colapsa a su español, que es el que el snapshot del
+        teléfono exportó siempre.
+        """
         if isinstance(value, dict):
-            es = str(value.get("es") or value.get("en") or "").strip()
-            en = str(value.get("en") or value.get("es") or "").strip()
-        else:
-            es = str(value or "").strip()
-            en = es
+            value = value.get("es") or value.get("en")
+        return str(value or "").strip()
 
-        if not es and not en:
+    def _debt_label(self, debt: dict) -> str:
+        """El nombre visible de una deuda, con su id de último recurso."""
+        return self._debt_name_text(debt.get("name")) or str(debt.get("id") or "").strip()
+
+    def _normalize_debt_name(self, value: object) -> str:
+        name = self._debt_name_text(value)
+        if not name:
             raise ValueError("Missing debt name")
-
-        return {
-            "es": es or en,
-            "en": en or es,
-        }
+        return name
 
     def _unique_debt_id(self, value: str, existing_ids: set[str]) -> str:
         base = self._slugify(value) or "debt"
@@ -3362,12 +3368,7 @@ class FinanceDataHandler(SimpleHTTPRequestHandler):
             debt_id = str(debt.get("id") or "").strip()
             if not debt_id:
                 continue
-            name = debt.get("name")
-            if isinstance(name, dict):
-                label = str(name.get("es") or name.get("en") or debt_id)
-            else:
-                label = str(name or debt_id)
-            catalog.append({"id": debt_id, "name": label})
+            catalog.append({"id": debt_id, "name": self._debt_label(debt)})
         return catalog
 
     def _export_mobile_snapshot(self) -> None:

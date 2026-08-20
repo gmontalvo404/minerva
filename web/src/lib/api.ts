@@ -226,7 +226,7 @@ export function reorderIncome(
 /** A debt with its schedule and totals, computed by server.py. */
 export interface DebtDetail {
   id: string;
-  name: string | { es?: string; en?: string };
+  name: string;
   capital: number;
   initial_investment: number;
   financed_capital: number;
