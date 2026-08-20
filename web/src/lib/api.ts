@@ -480,6 +480,18 @@ export async function settleDebt(path: string, debtId: string): Promise<void> {
   await post("/api/debts/settle", { path, debt_id: debtId });
 }
 
+/**
+ * El dado del plan: una comida al azar por franja, sin las excluidas. Con
+ * `dayIndex` tira un día; sin él, la semana entera.
+ *
+ * La cuenta la hace el servidor y no el navegador, por lo mismo que todas las
+ * demás: el teléfono no puede reimplementarla, y dos copias de la misma regla
+ * acaban dando resultados distintos.
+ */
+export async function randomizeNutrition(path: string, dayIndex?: number): Promise<void> {
+  await post("/api/nutrition/randomize", dayIndex === undefined ? { path } : { path, day_index: dayIndex });
+}
+
 export async function getShoppingList(planPath: string): Promise<NutritionCosts> {
   const response = await fetch(`/api/nutrition/shopping?path=${encodeURIComponent(planPath)}`);
   if (!response.ok) {

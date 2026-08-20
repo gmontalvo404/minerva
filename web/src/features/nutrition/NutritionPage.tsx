@@ -4,6 +4,7 @@ import {
   EMPTY_NUTRITION_COSTS,
   getNutritionPlan,
   getShoppingList,
+  randomizeNutrition,
   saveNutritionPlan,
 } from "../../lib/api";
 import type { NutritionCosts } from "../../lib/api";
@@ -98,15 +99,38 @@ export function NutritionPage({ dataset, language, onSidebar }: NutritionPagePro
   /** Bumped when a conflict reloads the plan: edits queued before it are stale. */
   const generation = useRef(0);
 
+  /**
+   * Relee el plan de disco y descarta lo que estuviera esperando a guardarse.
+   * Subir `generation` es lo que impide el atropello: una edición en el
+   * debounce se construyó sobre la versión anterior, así que escribirla ahora
+   * —ya con el hash nuevo, que el servidor aceptaría— borraría justo lo que
+   * acaba de llegar.
+   */
+  const reloadPlan = useCallback(async () => {
+    generation.current += 1;
+    const fresh = await getNutritionPlan<NutritionPlan>(path, EMPTY_PLAN).catch(() => null);
+    if (!fresh) return;
+    baseHash.current = fresh.hash;
+    setPlan({ ...EMPTY_PLAN, ...fresh.document });
+  }, [path]);
+
   // El plan puede cambiar detrás: el dado del teléfono, otra pestaña. Sin
   // esto la semana se quedaba como estaba al abrir, que es como los dos
   // dispositivos acababan mostrando cosas distintas.
   useDataChanges(() => {
-    void getNutritionPlan<NutritionPlan>(path, EMPTY_PLAN).then(({ document, hash }) => {
-      baseHash.current = hash;
-      setPlan({ ...EMPTY_PLAN, ...document });
-    });
+    void reloadPlan();
   });
+
+  /** El dado, que resuelve el servidor; aquí solo se relee el resultado. */
+  const roll = async (dayIndex?: number) => {
+    try {
+      await randomizeNutrition(path, dayIndex);
+      await reloadPlan();
+      await getShoppingList(path).then(setCosts).catch(() => undefined);
+    } catch {
+      setStatus(t("save_entry_error"));
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -151,12 +175,7 @@ export function NutritionPage({ dataset, language, onSidebar }: NutritionPagePro
             if (error instanceof ApiError && error.status === 409) {
               // The file moved under us — another tab, the other app. The
               // newer version wins; this tab reloads it and says so.
-              generation.current += 1;
-              const fresh = await getNutritionPlan<NutritionPlan>(path, EMPTY_PLAN).catch(() => null);
-              if (fresh) {
-                baseHash.current = fresh.hash;
-                setPlan({ ...EMPTY_PLAN, ...fresh.document });
-              }
+              await reloadPlan();
               setStatus(t("nutrition_conflict"));
               return;
             }
@@ -238,18 +257,6 @@ export function NutritionPage({ dataset, language, onSidebar }: NutritionPagePro
     id ? (plan.meals[type] ?? []).find((meal) => meal.id === id) ?? null : null;
 
   const costOf = (id: string | null | undefined) => (id ? costs.mealCosts[id] ?? 0 : 0);
-
-  /** randomizeNutritionDay: one random meal per slot, excluded ones left out. */
-  const randomDay = (day: WeekDay): WeekDay => {
-    const next: WeekDay = { ...day };
-    for (const type of MEAL_TYPES) {
-      const options = availableMeals(type);
-      next[type] = options.length
-        ? options[Math.floor(Math.random() * options.length)]?.id ?? undefined
-        : undefined;
-    }
-    return next;
-  };
 
   const setDay = (index: number, day: WeekDay) => {
     update({ ...plan, week: plan.week.map((current, position) => (position === index ? day : current)) });
@@ -356,7 +363,7 @@ export function NutritionPage({ dataset, language, onSidebar }: NutritionPagePro
               <button
                 type="button"
                 className="button button--compact nutrition-random-btn"
-                onClick={() => update({ ...plan, week: plan.week.map(randomDay) })}
+                onClick={() => void roll()}
               >
                 🎲 {t("nutrition_random_week")}
               </button>
@@ -391,7 +398,7 @@ export function NutritionPage({ dataset, language, onSidebar }: NutritionPagePro
                             className="nutrition-dice"
                             title={t("nutrition_random_day")}
                             aria-label={t("nutrition_random_day")}
-                            onClick={() => setDay(dayIndex, randomDay(day))}
+                            onClick={() => void roll(dayIndex)}
                           >
                             🎲
                           </button>
