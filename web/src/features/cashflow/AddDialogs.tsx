@@ -269,6 +269,40 @@ export function AddIncomeDialog({
     };
   }, [open, monthUsdCop]);
 
+  /**
+   * Los dos montos son el mismo dinero en dos monedas: al escribir uno, el
+   * otro se rellena con la tasa que haya. Sigue siendo editable — si lo
+   * cambias a mano, manda lo que quede escrito, no lo calculado.
+   *
+   * Redondeo como roundIncomeDisplayValue del original: dos decimales, y por
+   * debajo de medio centavo es cero.
+   */
+  const round2 = (value: number) => (Math.abs(value) < 0.005 ? 0 : Math.round(value * 100) / 100);
+  const show = (value: number) => (Number.isFinite(value) ? String(round2(value)) : "");
+
+  const typeUsd = (raw: string) => {
+    setAmountUsd(raw);
+    const rate = Number(usdCop);
+    if (!raw.trim()) return setAmountCop("");
+    if (rate > 0 && Number.isFinite(Number(raw))) setAmountCop(show(Number(raw) * rate));
+  };
+
+  const typeCop = (raw: string) => {
+    setAmountCop(raw);
+    const rate = Number(usdCop);
+    if (!raw.trim()) return setAmountUsd("");
+    if (rate > 0 && Number.isFinite(Number(raw))) setAmountUsd(show(Number(raw) / rate));
+  };
+
+  /** Cambiar la tasa rehace los pesos, que es el lado que depende de ella. */
+  const typeRate = (raw: string) => {
+    setUsdCop(raw);
+    const rate = Number(raw);
+    if (rate > 0 && amountUsd.trim() && Number.isFinite(Number(amountUsd))) {
+      setAmountCop(show(Number(amountUsd) * rate));
+    }
+  };
+
   /** Como validateCreateIncomeForm del original: un monto y una tasa usable. */
   const problem = (): string | null => {
     if (!amountUsd.trim() && !amountCop.trim()) return t("create_income_amount_error");
@@ -283,8 +317,9 @@ export function AddIncomeDialog({
       return;
     }
     try {
-      // An amount left blank is not sent: the server works it out from the
-      // other one and the rate. Sending a 0 would store a zero instead.
+      // Ambos montos viajan cuando ambos están escritos: con el cálculo a la
+      // vista, lo que se guarda es lo que se leyó — incluido un ajuste a mano
+      // del lado calculado, que derivarlo de nuevo habría descartado.
       await createIncome(path, monthIndex, {
         description: description.trim(),
         usd_cop: Number(usdCop) || 0,
@@ -352,9 +387,10 @@ export function AddIncomeDialog({
           />
         </label>
 
-        {numberField(t("monthly_entries_usd"), amountUsd, setAmountUsd)}
-        {numberField(t("monthly_income_fx"), usdCop, setUsdCop)}
-        {numberField(t("monthly_entries_cop"), amountCop, setAmountCop)}
+        {numberField(t("monthly_entries_usd"), amountUsd, typeUsd)}
+        {numberField(t("income_fx_field"), usdCop, typeRate)}
+        {numberField(t("monthly_entries_cop"), amountCop, typeCop)}
+        <p className="field__hint movement-form__full">{t("income_fx_hint")}</p>
 
         <label className="field movement-form__active">
           <span className="field__label">{t("monthly_income_received")}</span>

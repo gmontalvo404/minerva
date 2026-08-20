@@ -23,6 +23,9 @@ struct EditIncomeView: View {
     @State private var received: Bool
     /// El último de los tres montos que se tocó.
     @State private var touched: String?
+    /// Escribir en un campo mueve el otro, y eso vuelve a disparar onChange:
+    /// sin esta guarda los dos se persiguen.
+    @State private var syncing = false
 
     private var theme: Theme { .of(scheme) }
     private var isNew: Bool { income == nil }
@@ -60,7 +63,7 @@ struct EditIncomeView: View {
                     }
                     money("USD", text: $amountUsd, key: "amount_usd")
                     money("Tasa USD → COP", text: $usdCop, key: "usd_cop")
-                    Text("Cuántos pesos vale un dólar. Escribe uno de los dos montos y el otro sale de aquí.")
+                    Text("Cuántos pesos vale un dólar. Escribe uno de los dos montos y el otro se calcula.")
                         .font(.forum(13))
                         .foregroundStyle(theme.muted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -139,8 +142,43 @@ struct EditIncomeView: View {
                 .padding(.horizontal, 14)
                 .frame(minHeight: 46)
                 .background(shell)
-                .onChange(of: text.wrappedValue) { _ in touched = key }
+                .onChange(of: text.wrappedValue) { nuevo in
+                    touched = key
+                    sync(from: key, value: nuevo)
+                }
         }
+    }
+
+    /// Los dos montos son el mismo dinero en dos monedas: al escribir uno, el
+    /// otro se rellena con la tasa que haya. Queda editable — cambiarlo a mano
+    /// manda lo que quede escrito, no lo calculado.
+    private func sync(from key: String, value: String) {
+        guard !syncing else { return }
+        let rate = Self.parse(usdCop) ?? 0
+        syncing = true
+        defer { syncing = false }
+
+        switch key {
+        case "amount_usd":
+            if value.trimmingCharacters(in: .whitespaces).isEmpty { amountCop = "" }
+            else if rate > 0, let usd = Self.parse(value) { amountCop = Self.show(usd * rate) }
+        case "amount_cop":
+            if value.trimmingCharacters(in: .whitespaces).isEmpty { amountUsd = "" }
+            else if rate > 0, let cop = Self.parse(value) { amountUsd = Self.show(cop / rate) }
+        default:
+            // La tasa rehace los pesos, que es el lado que depende de ella.
+            if let r = Self.parse(value), r > 0, let usd = Self.parse(amountUsd) {
+                amountCop = Self.show(usd * r)
+            }
+        }
+    }
+
+    /// roundIncomeDisplayValue del original: dos decimales, y por debajo de
+    /// medio centavo es cero.
+    private static func show(_ value: Double) -> String {
+        guard value.isFinite else { return "" }
+        let r = abs(value) < 0.005 ? 0 : (value * 100).rounded() / 100
+        return r == r.rounded() ? String(Int(r)) : String(r)
     }
 
     /// Lo mismo que validaba el formulario original: un monto y una tasa
